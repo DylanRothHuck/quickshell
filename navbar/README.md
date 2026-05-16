@@ -7,7 +7,7 @@ A minimal Quickshell top bar for omarchy. Kanagawa Dragon layout, kanji workspac
 ## Quick start
 
 ```sh
-git clone https://github.com/bjarneo/quickshell-navbar ~/.config/quickshell/navbar
+git clone https://github.com/bjarneo/quickshell ~/.config/quickshell
 
 # disable omarchy's waybar (see below)
 omarchy toggle waybar
