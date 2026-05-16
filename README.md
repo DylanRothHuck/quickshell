@@ -7,6 +7,8 @@ Personal [Quickshell](https://quickshell.outfoxxed.me) configs built for [omarch
 | [`navbar/`](./navbar) | Minimal top bar. Kanagawa Dragon layout, kanji workspace markers, omarchy-theme-aware colors. |
 | [`song-drop/`](./song-drop) | MPRIS notifier. Drops a liquid blob from the bar on track change, morphs into a song-title pill, holds, then retreats. |
 | [`theme-wash/`](./theme-wash) | Theme-swap flourish. On `omarchy theme set <name>`, washes the new accent across the bar from an alternating corner like ink spilling in water, with the old accent pulsing out from the centre and the new theme's name popping briefly mid-wash. |
+| [`music-wallpaper/`](./music-wallpaper) | Music-reactive wallpaper. Reads `cliamp visstream` NDJSON, paints a soft radial pulse with mids halo, bass-transient ripples, and a low-opacity EQ across the bottom. Tints to the omarchy accent. |
+| [`clipboard-ripple/`](./clipboard-ripple) | Clipboard tactile feedback. `wl-paste --watch` blooms a soft accent-tinted halo outward from the cursor while a brighter inner core pulses twice. Click-through overlay. |
 
 Each module is a self-contained Quickshell config rooted at `shell.qml`.
 
@@ -26,6 +28,12 @@ qs -n -d -c song-drop
 
 # launch the theme-wash flourish
 qs -n -d -c theme-wash
+
+# launch the music-reactive wallpaper (requires cliamp)
+qs -n -d -c music-wallpaper
+
+# launch the clipboard ripple
+qs -n -d -c clipboard-ripple
 ```
 
 `-c <name>` resolves to `~/.config/quickshell/<name>/shell.qml`. `-d` daemonizes, `-n` makes it idempotent.
@@ -38,7 +46,7 @@ For per-module setup (autostart hooks, theme reactivity details, customization k
 - hyprland
 - omarchy (for the live theme palette and the `omarchy toggle waybar` flow)
 
-navbar also wants `pamixer`, `bluetoothctl`, and `nmcli` for its telemetry tiles. song-drop only needs an MPRIS-capable player (mpv, spotify, etc.).
+navbar also wants `pamixer`, `bluetoothctl`, and `nmcli` for its telemetry tiles. song-drop only needs an MPRIS-capable player (mpv, spotify, etc.). music-wallpaper needs [`cliamp`](https://github.com/bjarneo/cliamp) on `PATH` for its `visstream` NDJSON feed. clipboard-ripple needs `wl-clipboard` (for `wl-paste`) and `python3` for the cursor/monitor query.
 
 ## License
 
