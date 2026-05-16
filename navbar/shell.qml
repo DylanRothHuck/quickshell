@@ -388,9 +388,15 @@ ShellRoot {
                     opacity: 0.4
                 }
                 Item {
+                    id: dateItem
                     anchors.verticalCenter: parent.verticalCenter
-                    implicitWidth: dateText.implicitWidth
-                    implicitHeight: dateText.implicitHeight
+                    // Pad outwards so the bloom (clipped to this item) has
+                    // room around the glyph instead of just halo-ing inside
+                    // the tight letterbox.
+                    implicitWidth: dateText.implicitWidth + 12
+                    implicitHeight: dateText.implicitHeight + 6
+
+                    Bloom { id: dateBloom }
 
                     Text {
                         id: dateText
@@ -407,9 +413,9 @@ ShellRoot {
                     MouseArea {
                         id: dateMouse
                         anchors.fill: parent
-                        anchors.margins: -6
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
+                        onEntered: dateBloom.fire(mouseX, mouseY)
                         onClicked: {
                             if (root.calendarVisible) root.calendarVisible = false;
                             else root.openCalendar();
@@ -713,6 +719,56 @@ ShellRoot {
         color: root.sep
     }
 
+    // Hover bloom: a soft accent-tinted halo that radiates from the cursor's
+    // entry point and fades inside the item rect. Single-beat sibling of
+    // clipboard-ripple — same halo/ox/oy/haloR/haloO vocabulary, just
+    // scaled down for the bar (~250 ms, no inner core pulse) and clipped to
+    // the host bounds so neighbours don't get splashed.
+    component Bloom: Item {
+        id: bloomRoot
+        anchors.fill: parent
+        clip: true
+
+        property real ox: 0
+        property real oy: 0
+        property real haloR: 0
+        property real haloO: 0
+
+        function fire(x, y) {
+            bloomRoot.ox = x;
+            bloomRoot.oy = y;
+            bloomAnim.restart();
+        }
+
+        Rectangle {
+            width: bloomRoot.haloR * 2
+            height: bloomRoot.haloR * 2
+            radius: bloomRoot.haloR
+            x: bloomRoot.ox - bloomRoot.haloR
+            y: bloomRoot.oy - bloomRoot.haloR
+            color: Qt.lighter(root.accent, 1.35)
+            opacity: bloomRoot.haloO
+            antialiasing: true
+        }
+
+        SequentialAnimation {
+            id: bloomAnim
+            ScriptAction { script: { bloomRoot.haloR = 0; bloomRoot.haloO = 0; } }
+            ParallelAnimation {
+                NumberAnimation {
+                    target: bloomRoot; property: "haloR"
+                    from: 2; to: Math.max(bloomRoot.width, bloomRoot.height) * 0.9
+                    duration: 250
+                    easing.type: Easing.OutCubic
+                }
+                SequentialAnimation {
+                    NumberAnimation { target: bloomRoot; property: "haloO"; from: 0; to: 0.22; duration: 80; easing.type: Easing.OutQuad }
+                    NumberAnimation { target: bloomRoot; property: "haloO"; to: 0; duration: 170; easing.type: Easing.InCubic }
+                }
+            }
+        }
+    }
+
     component Module: Item {
         property string glyph: ""
         property color color: root.ink
@@ -735,6 +791,8 @@ ShellRoot {
             Behavior on color { ColorAnimation { duration: 180 } }
         }
 
+        Bloom { id: bloom }
+
         Text {
             anchors.centerIn: parent
             text: glyph
@@ -749,6 +807,7 @@ ShellRoot {
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
+            onEntered: bloom.fire(mouseX, mouseY)
             onClicked: (e) => {
                 if (e.button === Qt.RightButton) parent.rightActivated();
                 else parent.activated();
@@ -768,6 +827,8 @@ ShellRoot {
         Layout.preferredWidth: 20
         Layout.preferredHeight: root.barHeight
 
+        Bloom { id: bloom }
+
         Text {
             id: kanji
             anchors.centerIn: parent
@@ -784,7 +845,9 @@ ShellRoot {
 
         MouseArea {
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
+            onEntered: bloom.fire(mouseX, mouseY)
             onClicked: parent.activated()
         }
     }
