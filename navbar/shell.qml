@@ -29,7 +29,18 @@ ShellRoot {
     property color inkDeep: "#c8c093"
     property color sumi:    "#a6a69c"
     property color indigo:  "#658594"
-    property color seal:    "#c4746e"
+    // sealRaw is the palette-sourced value. seal is its drift-modulated
+    // view: saturation rides driftAmount*0.05 above resting, which gets
+    // pumped right after a theme swap and eases back over ~3s. Every
+    // existing root.seal reference inherits the drift via this binding.
+    property color sealRaw: "#c4746e"
+    property real  driftAmount: 0
+    readonly property color seal: Qt.hsva(
+        sealRaw.hsvHue,
+        Math.min(1, sealRaw.hsvSaturation + driftAmount * 0.05),
+        sealRaw.hsvValue,
+        sealRaw.a
+    )
 
     // Derived bar colours. bg is paper at 0.94; sep is ink at 0.18.
     readonly property color bg:     Qt.rgba(paper.r, paper.g, paper.b, 0.94)
@@ -141,7 +152,7 @@ ShellRoot {
         if (want.color7)     root.inkDeep = want.color7;
         if (want.color8)     root.sumi    = want.color8;
         if (want.accent)     root.indigo  = want.accent;
-        if (want.color1)     root.seal    = want.color1;
+        if (want.color1)     root.sealRaw = want.color1;
     }
 
     FileView {
@@ -160,7 +171,35 @@ ShellRoot {
         id: themeMarker
         path: root.themeNamePath
         watchChanges: true
-        onFileChanged: { reload(); paletteFile.reload(); }
+        // Restart the drift delay every swap. onFileChanged only fires on
+        // inotify-driven changes (not on the initial load), so this is the
+        // right place to detect "user just did `omarchy theme set`."
+        onFileChanged: { reload(); paletteFile.reload(); driftDelay.restart(); }
+    }
+
+    // theme-wash's animation runs ~1.5s; wait it out so the saturation
+    // bump lands as it exits, then rise quick and taper slow over ~3s.
+    Timer {
+        id: driftDelay
+        interval: 1550
+        repeat: false
+        onTriggered: driftAnim.restart()
+    }
+
+    SequentialAnimation {
+        id: driftAnim
+        NumberAnimation {
+            target: root; property: "driftAmount"
+            from: 0; to: 1
+            duration: 200
+            easing.type: Easing.OutQuad
+        }
+        NumberAnimation {
+            target: root; property: "driftAmount"
+            to: 0
+            duration: 2800
+            easing.type: Easing.OutCubic
+        }
     }
 
     // ---------- Generic launcher ----------
