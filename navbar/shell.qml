@@ -69,6 +69,7 @@ ShellRoot {
     readonly property string icoRefresh: String.fromCodePoint(0xf0450)
     readonly property string icoDisplay: String.fromCodePoint(0xf0379)
     readonly property string icoPower:   String.fromCodePoint(0xf0425)
+    readonly property string icoAether:  String.fromCodePoint(0xf03d8)
 
     readonly property int barHeight: 26
 
@@ -1211,6 +1212,16 @@ ShellRoot {
                         else root.openWeather();
                     }
                     onRightActivated: root.refreshWeather()
+                }
+
+                Module {
+                    // Nerd Font mdi-palette (U+F03D8). Left-click launches
+                    // the Aether GUI; right-click regenerates the system
+                    // theme from a random local wallpaper via the CLI.
+                    glyph: root.icoAether
+                    tooltip: "Aether"
+                    onActivated: root.run("aether")
+                    onRightActivated: root.run("sh -c 'aether --generate \"$(aether --random-wallpaper)\"'")
                 }
 
                 Module {
