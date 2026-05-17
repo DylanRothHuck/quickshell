@@ -67,6 +67,8 @@ ShellRoot {
     readonly property string icoMute:    String.fromCodePoint(0xeee8)
     readonly property string icoCamera:  String.fromCodePoint(0xf0100)
     readonly property string icoRefresh: String.fromCodePoint(0xf0450)
+    readonly property string icoDisplay: String.fromCodePoint(0xf0379)
+    readonly property string icoPower:   String.fromCodePoint(0xf0425)
 
     readonly property int barHeight: 26
 
@@ -822,7 +824,7 @@ ShellRoot {
                     color: root.seal
                     fontFamily: "omarchy"
                     fontSize: 14
-                    onActivated: root.run("omarchy-menu")
+                    onActivated: root.run("qs -c omni-menu ipc call palette toggle")
                     onRightActivated: root.run("xdg-terminal-exec")
                 }
 
