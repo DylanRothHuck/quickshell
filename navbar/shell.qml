@@ -118,12 +118,20 @@ ShellRoot {
         return cells;
     }
 
-    readonly property string calendarTitle: {
+    readonly property string calendarMonthName: {
         root.calendarTick;
-        const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+        const months = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
+                        "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
         const now = new Date();
         const d = new Date(now.getFullYear(), now.getMonth() + root.calendarMonthOffset, 1);
-        return months[d.getMonth()] + " " + d.getFullYear();
+        return months[d.getMonth()];
+    }
+
+    readonly property string calendarYear: {
+        root.calendarTick;
+        const now = new Date();
+        const d = new Date(now.getFullYear(), now.getMonth() + root.calendarMonthOffset, 1);
+        return String(d.getFullYear());
     }
 
     function openCalendar() {
@@ -670,10 +678,11 @@ ShellRoot {
     }
 
     // ---------- Calendar popup ----------
-    // Overlay layer that floats below the bar. ExclusionMode.Ignore so it
-    // doesn't reserve space (it would shift the bar otherwise). The card
-    // descends from the date on a thin seal-coloured thread — thread leads,
-    // card trails — so the popup reads as something dropped from the bar.
+    // Overlay layer that floats below the bar. ExclusionMode.Ignore so the
+    // panel doesn't reserve screen real estate. The card unfolds from the
+    // date pill: a thin seal thread descends from the bar, then a y-axis
+    // Scale transform unrolls the card downward. Asymmetric open/close
+    // (220ms OutCubic / 140ms InCubic) makes the motion feel weighted.
     PanelWindow {
         id: calendarPopup
         // Stay alive while the close animation plays; once reveal decays
@@ -681,38 +690,42 @@ ShellRoot {
         visible: root.calendarVisible || reveal > 0.001
         color: "transparent"
         anchors { top: true; left: true; right: true }
-        implicitHeight: root.barHeight + 260
+        implicitHeight: root.barHeight + 320
         exclusionMode: ExclusionMode.Ignore
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.namespace: "omarchy-calendar"
 
+        // Single driver — reveal animates 0↔1, asymmetric on direction.
+        // Behavior reads its duration/easing at change-time, so the
+        // bindings pick the right values automatically from the new
+        // calendarVisible state.
         property real reveal: root.calendarVisible ? 1 : 0
-        Behavior on reveal { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-
-        // Thread leads (full extension by ~55% of the reveal), card trails
-        // (starts emerging around 40%). Symmetrical on the way out.
-        readonly property real threadProgress: Math.min(1, reveal / 0.55)
-        readonly property real cardProgress:   Math.max(0, (reveal - 0.4) / 0.6)
+        Behavior on reveal {
+            NumberAnimation {
+                duration: root.calendarVisible ? 220 : 140
+                easing.type: root.calendarVisible ? Easing.OutCubic : Easing.InCubic
+            }
+        }
 
         MouseArea {
             anchors.fill: parent
             onClicked: root.calendarVisible = false
         }
 
-        // The "thread" — a 1px seal line that drops from just below the
-        // bar, marking where the popup originated from.
+        // The thread — 1px seal line that drops from just below the bar,
+        // tethering the card to the date in the bar.
         Rectangle {
             id: thread
             anchors.horizontalCenter: parent.horizontalCenter
             y: root.barHeight - 1
             width: 1
-            height: 14 * calendarPopup.threadProgress
+            height: 14 * calendarPopup.reveal
             color: root.seal
-            opacity: calendarPopup.threadProgress
+            opacity: calendarPopup.reveal
             antialiasing: true
         }
 
-        // Tiny seal seed where the thread meets the card — a stitch.
+        // Stitch where the thread meets the card.
         Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             y: thread.y + thread.height - 1
@@ -720,7 +733,7 @@ ShellRoot {
             height: 3
             radius: 1.5
             color: root.seal
-            opacity: calendarPopup.threadProgress
+            opacity: calendarPopup.reveal
             antialiasing: true
         }
 
@@ -729,15 +742,22 @@ ShellRoot {
             anchors.top: thread.bottom
             anchors.topMargin: 2
             anchors.horizontalCenter: parent.horizontalCenter
-            width: 232
-            height: cardCol.implicitHeight + 24
+            width: 268
+            height: cardCol.implicitHeight + 28
             color: root.bg
             border.color: root.sep
             border.width: 1
             radius: 0
-            opacity: calendarPopup.cardProgress
-            transformOrigin: Item.Top
-            scale: 0.94 + 0.06 * calendarPopup.cardProgress
+
+            // y-axis unfold from the top edge (the thread origin). Layout
+            // height stays constant; only rendered geometry collapses, so
+            // there's no reflow during the animation.
+            transform: Scale {
+                origin.x: card.width / 2
+                origin.y: 0
+                xScale: 1
+                yScale: calendarPopup.reveal
+            }
 
             // Swallow clicks on the card so they don't bubble to the outer
             // dismiss area.
@@ -746,72 +766,82 @@ ShellRoot {
             Column {
                 id: cardCol
                 anchors.fill: parent
-                anchors.margins: 12
-                spacing: 8
+                anchors.margins: 14
+                spacing: 10
 
-                // Header: month + year, with prev/next.
+                // Header: month label on the left, year underneath; prev /
+                // today-reset / next chevrons on the right.
                 Item {
                     width: parent.width
-                    height: 22
+                    height: 36
 
-                    Text {
-                        id: monthLabel
+                    Column {
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.calendarTitle
-                        color: root.seal
-                        font.family: root.serif
-                        font.pixelSize: 14
-                        font.letterSpacing: 2
+                        spacing: 2
+
+                        Text {
+                            text: root.calendarMonthName
+                            color: root.ink
+                            font.family: root.mono
+                            font.pixelSize: 14
+                            font.letterSpacing: 3
+                            font.weight: Font.Medium
+                        }
+                        Text {
+                            text: root.calendarYear
+                            color: root.sumi
+                            font.family: root.mono
+                            font.pixelSize: 10
+                            font.letterSpacing: 2
+                        }
                     }
 
                     Row {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 6
+                        spacing: 10
 
                         Text {
-                            id: prevBtn
                             text: "‹"
                             color: prevMouse.containsMouse ? root.seal : root.ink
                             font.family: root.mono
-                            font.pixelSize: 16
+                            font.pixelSize: 18
                             Behavior on color { ColorAnimation { duration: 120 } }
                             MouseArea {
                                 id: prevMouse
                                 anchors.fill: parent
-                                anchors.margins: -4
+                                anchors.margins: -6
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: { root.calendarMonthOffset--; root.calendarTick++; }
                             }
                         }
-
                         Text {
                             text: "•"
-                            color: root.sumi
+                            color: todayMouse.containsMouse ? root.seal : root.sumi
                             font.family: root.mono
-                            font.pixelSize: 10
-                            opacity: 0.5
+                            font.pixelSize: 14
+                            Behavior on color { ColorAnimation { duration: 120 } }
                             MouseArea {
+                                id: todayMouse
                                 anchors.fill: parent
-                                anchors.margins: -4
+                                anchors.margins: -6
+                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: { root.calendarMonthOffset = 0; root.calendarTick++; }
                             }
                         }
-
                         Text {
-                            id: nextBtn
                             text: "›"
                             color: nextMouse.containsMouse ? root.seal : root.ink
                             font.family: root.mono
-                            font.pixelSize: 16
+                            font.pixelSize: 18
                             Behavior on color { ColorAnimation { duration: 120 } }
                             MouseArea {
                                 id: nextMouse
                                 anchors.fill: parent
-                                anchors.margins: -4
+                                anchors.margins: -6
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: { root.calendarMonthOffset++; root.calendarTick++; }
@@ -827,61 +857,100 @@ ShellRoot {
                     color: root.sep
                 }
 
-                // Weekday row (Monday first).
-                Grid {
-                    columns: 7
-                    rowSpacing: 0
-                    columnSpacing: 0
+                // Weekday row (Monday first). Sat/Sun tinted seal so the
+                // week's shape is readable at a glance.
+                Row {
                     width: parent.width
+                    spacing: 0
 
                     Repeater {
                         model: ["MO","TU","WE","TH","FR","SA","SU"]
                         delegate: Item {
                             required property string modelData
-                            width: 28
+                            required property int index
+                            width: cardCol.width / 7
                             height: 18
                             Text {
                                 anchors.centerIn: parent
                                 text: modelData
-                                color: root.sumi
+                                color: index >= 5 ? root.seal : root.sumi
+                                opacity: index >= 5 ? 0.85 : 0.7
                                 font.family: root.mono
                                 font.pixelSize: 9
-                                font.letterSpacing: 1
+                                font.letterSpacing: 2
                             }
                         }
                     }
                 }
 
-                // Day grid: 6 rows of 7 cells.
+                // Day grid: 6 rows of 7 cells. Today is a filled chip with
+                // theme-aware contrast text. Inactive (leading/trailing
+                // month) days are faded to maintain the grid silhouette.
                 Grid {
                     columns: 7
-                    rowSpacing: 0
+                    rowSpacing: 2
                     columnSpacing: 0
                     width: parent.width
 
                     Repeater {
                         model: root.calendarCells
                         delegate: Item {
+                            id: dayCell
                             required property var modelData
-                            width: 28
-                            height: 24
+                            required property int index
+                            width: cardCol.width / 7
+                            height: 28
 
+                            readonly property int  dayOfWeek: index % 7
+                            readonly property bool isWeekend: dayOfWeek >= 5
+                            readonly property bool isCurrentMonth: modelData.day !== 0
+                            readonly property bool isToday: modelData.today
+
+                            // Today chip.
                             Rectangle {
                                 anchors.centerIn: parent
-                                width: 22
-                                height: 22
-                                color: modelData.today ? root.seal : "transparent"
-                                opacity: modelData.today ? 0.18 : 0
-                                radius: 0
+                                width: 24
+                                height: 24
+                                radius: 12
+                                color: root.seal
+                                visible: dayCell.isToday
+                                antialiasing: true
                             }
+
+                            // Hover halo on regular cells.
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 24
+                                height: 24
+                                radius: 12
+                                color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                                visible: dayMouse.containsMouse && !dayCell.isToday && dayCell.isCurrentMonth
+                                antialiasing: true
+                                Behavior on opacity { NumberAnimation { duration: 120 } }
+                            }
+
                             Text {
                                 anchors.centerIn: parent
-                                text: modelData.day === 0 ? "" : modelData.day
-                                color: modelData.today ? root.seal : root.ink
-                                opacity: modelData.day === 0 ? 0 : 1
+                                text: dayCell.modelData.day === 0 ? "" : dayCell.modelData.day
+                                color: dayCell.isToday
+                                       ? (root.seal.hsvValue < 0.5 ? root.ink : root.paper)
+                                       : (dayCell.isCurrentMonth
+                                          ? (dayCell.isWeekend ? root.seal : root.ink)
+                                          : root.sumi)
+                                opacity: dayCell.isCurrentMonth ? 1.0 : 0.35
                                 font.family: root.mono
                                 font.pixelSize: 11
-                                font.weight: modelData.today ? Font.Medium : Font.Light
+                                font.weight: dayCell.isToday ? Font.Medium : Font.Light
+                            }
+
+                            MouseArea {
+                                id: dayMouse
+                                anchors.fill: parent
+                                hoverEnabled: dayCell.isCurrentMonth
+                                enabled: dayCell.isCurrentMonth
+                                cursorShape: dayCell.isCurrentMonth
+                                             ? Qt.PointingHandCursor
+                                             : Qt.ArrowCursor
                             }
                         }
                     }
