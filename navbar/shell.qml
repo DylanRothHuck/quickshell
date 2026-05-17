@@ -65,6 +65,8 @@ ShellRoot {
     readonly property string icoVol2:    String.fromCodePoint(0xf027)
     readonly property string icoVol3:    String.fromCodePoint(0xf028)
     readonly property string icoMute:    String.fromCodePoint(0xeee8)
+    readonly property string icoCamera:  String.fromCodePoint(0xf0100)
+    readonly property string icoRefresh: String.fromCodePoint(0xf0450)
 
     readonly property int barHeight: 26
 
@@ -104,6 +106,41 @@ ShellRoot {
     property string mm: "--"
     property string dd: "--"
     property string mon: "---"
+
+    // ---------- Screenshots popup state ----------
+    property bool screenshotsVisible: false
+    property int screenshotPage: 0
+    readonly property int screenshotsPerPage: 12
+    property var screenshotFiles: []
+    property int selectedScreenshot: -1
+
+    function openScreenshots() {
+        root.screenshotPage = 0;
+        root.selectedScreenshot = 0;
+        screenshotProbe.running = false;
+        screenshotProbe.running = true;
+        root.screenshotsVisible = true;
+    }
+
+    function formatScreenshotLabel(path) {
+        const m = String(path).match(/screenshot-(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-\d{2}\.[A-Za-z0-9]+$/);
+        if (m) return m[1] + " " + m[2] + ":" + m[3];
+        const parts = String(path).split("/");
+        return parts[parts.length - 1];
+    }
+
+    // Empty slice while the popup is hidden so the Repeater delegates'
+    // Image bindings drop their sources and stop holding decoded thumbs.
+    readonly property var visibleScreenshots: {
+        if (!root.screenshotsVisible) return [];
+        const start = root.screenshotPage * root.screenshotsPerPage;
+        return root.screenshotFiles.slice(start, start + root.screenshotsPerPage);
+    }
+
+    readonly property int screenshotPageCount: {
+        if (root.screenshotFiles.length === 0) return 1;
+        return Math.ceil(root.screenshotFiles.length / root.screenshotsPerPage);
+    }
 
     // ---------- Calendar popup state ----------
     property bool calendarVisible: false
@@ -533,6 +570,56 @@ ShellRoot {
     Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: { audioProbe.running = false; audioProbe.running = true; } }
 
+    // ---------- Screenshots list probe ----------
+    // Cap at 60 entries (~5 pages) so a screenshot-heavy ~/Pictures
+    // doesn't keep dozens of decoded thumbs hot.
+    Process {
+        id: screenshotProbe
+        running: false
+        command: ["sh", "-c",
+            "ls -t " + Quickshell.env("HOME") + "/Pictures/screenshot-*.png 2>/dev/null | head -60"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = this.text.trim().split("\n").filter(s => s.length > 0);
+                root.screenshotFiles = lines.map(p => ({
+                    path: p,
+                    label: root.formatScreenshotLabel(p)
+                }));
+                if (root.screenshotPage >= root.screenshotPageCount)
+                    root.screenshotPage = 0;
+                root.selectedScreenshot = root.visibleScreenshots.length > 0 ? 0 : -1;
+            }
+        }
+    }
+
+    // copiedPath stores the path (not the index) so the ack survives
+    // paging or a list refresh that lands mid-flash.
+    Process { id: shotCopier; running: false }
+    property string copiedPath: ""
+    Timer {
+        id: copiedReset
+        interval: 1400
+        repeat: false
+        onTriggered: root.copiedPath = ""
+    }
+    // Hold the popup open long enough for the seal-wash flash to bloom
+    // in (~80ms snap + a beat of read time) before dismissing.
+    Timer {
+        id: copiedDismiss
+        interval: 260
+        repeat: false
+        onTriggered: root.screenshotsVisible = false
+    }
+    function copyScreenshotToClipboard(path) {
+        // -t image/png so GTK/Electron paste it as an image, not a path.
+        shotCopier.command = ["sh", "-c", "wl-copy -t image/png < " + JSON.stringify(path)];
+        shotCopier.running = false;
+        shotCopier.running = true;
+        root.copiedPath = path;
+        copiedReset.restart();
+        if (root.screenshotsVisible) copiedDismiss.restart();
+    }
+
     // ---------- Battery icon helper ----------
     function batteryIcon() {
         const charging = root.batState === "Charging" || root.batState === "Full";
@@ -794,6 +881,17 @@ ShellRoot {
                     glyph: root.batteryIcon()
                     color: root.batVal <= 10 ? root.seal : root.batVal <= 20 ? root.indigo : root.ink
                     onActivated: root.run("omarchy-menu power")
+                }
+
+                Module {
+                    // Nerd Font mdi-camera (U+F0100). Left-click browses
+                    // recent shots; right-click triggers a fresh capture.
+                    glyph: root.icoCamera
+                    onActivated: {
+                        if (root.screenshotsVisible) root.screenshotsVisible = false;
+                        else root.openScreenshots();
+                    }
+                    onRightActivated: root.run("omarchy-capture-screenshot")
                 }
 
                 Module {
@@ -1064,6 +1162,346 @@ ShellRoot {
                 }
             }
         }
+    }
+
+    // ---------- Screenshots popup ----------
+    PanelWindow {
+        id: screenshotsPopup
+        visible: root.screenshotsVisible || reveal > 0.001
+        color: "transparent"
+        anchors { top: true; bottom: true; left: true; right: true }
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.namespace: "omarchy-screenshots"
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+
+        property real reveal: root.screenshotsVisible ? 1 : 0
+        Behavior on reveal {
+            NumberAnimation {
+                duration: root.screenshotsVisible ? 220 : 140
+                easing.type: root.screenshotsVisible ? Easing.OutCubic : Easing.InCubic
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.screenshotsVisible = false
+        }
+
+        Rectangle {
+            id: shotCard
+            anchors.centerIn: parent
+            width: 566
+            height: shotCol.implicitHeight + 34
+            color: root.bg
+            border.color: root.sep
+            border.width: 1
+            radius: 0
+
+            transformOrigin: Item.Center
+            scale: screenshotsPopup.reveal
+
+            focus: root.screenshotsVisible
+            Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape || event.key === Qt.Key_Q) {
+                    root.screenshotsVisible = false;
+                    event.accepted = true;
+                } else if (event.key === Qt.Key_Left) {
+                    if (root.screenshotPage > 0) { root.screenshotPage--; root.selectedScreenshot = 0; }
+                    event.accepted = true;
+                } else if (event.key === Qt.Key_Right) {
+                    if (root.screenshotPage < root.screenshotPageCount - 1) {
+                        root.screenshotPage++; root.selectedScreenshot = 0;
+                    }
+                    event.accepted = true;
+                }
+            }
+
+            MouseArea { anchors.fill: parent }
+
+            Column {
+                id: shotCol
+                anchors.fill: parent
+                anchors.margins: 17
+                spacing: 12
+
+                Item {
+                    width: parent.width
+                    height: 43
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+
+                        Text {
+                            text: "SCREENSHOTS"
+                            color: root.ink
+                            font.family: root.mono
+                            font.pixelSize: 19
+                            font.letterSpacing: 4
+                            font.weight: Font.Medium
+                        }
+                        Text {
+                            text: root.screenshotFiles.length === 0
+                                  ? "NO RECENT CAPTURES"
+                                  : "PAGE " + (root.screenshotPage + 1) + " / " + root.screenshotPageCount
+                                    + "  ·  " + root.screenshotFiles.length + " TOTAL"
+                            color: root.sumi
+                            font.family: root.mono
+                            font.pixelSize: 11
+                            font.letterSpacing: 2
+                        }
+                    }
+
+                    Row {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 12
+
+                        CalendarChevron {
+                            text: "‹"
+                            opacity: root.screenshotPage > 0 ? 1.0 : 0.3
+                            onTriggered: {
+                                if (root.screenshotPage > 0) {
+                                    root.screenshotPage--;
+                                    root.selectedScreenshot = 0;
+                                }
+                            }
+                        }
+                        CalendarChevron {
+                            // Nerd Font mdi-refresh (U+F0450). Matching
+                            // the chevrons' pixelSize is what aligns it
+                            // — Row positions Text items by their line
+                            // box, and mixing 16/24px gave different
+                            // ascents. The Nerd Font glyph fills more
+                            // of its box than ‹ › so it reads heavier;
+                            // sumi colour pulls it back visually.
+                            text: root.icoRefresh
+                            restColor: root.sumi
+                            font.pixelSize: 24
+                            onTriggered: {
+                                screenshotProbe.running = false;
+                                screenshotProbe.running = true;
+                            }
+                        }
+                        CalendarChevron {
+                            text: "›"
+                            opacity: root.screenshotPage < root.screenshotPageCount - 1 ? 1.0 : 0.3
+                            onTriggered: {
+                                if (root.screenshotPage < root.screenshotPageCount - 1) {
+                                    root.screenshotPage++;
+                                    root.selectedScreenshot = 0;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 1
+                    color: root.sep
+                }
+
+                Text {
+                    width: parent.width
+                    height: 248
+                    visible: root.screenshotFiles.length === 0
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    text: "~/Pictures/screenshot-*.png"
+                    color: root.sumi
+                    font.family: root.mono
+                    font.pixelSize: 11
+                    font.letterSpacing: 2
+                    opacity: 0.6
+                }
+
+                Grid {
+                    columns: 4
+                    rowSpacing: 6
+                    columnSpacing: 6
+                    width: parent.width
+                    visible: root.screenshotFiles.length > 0
+
+                    Repeater {
+                        // Always 12 slots so the grid keeps its silhouette
+                        // even on a partially-filled last page.
+                        model: root.screenshotsPerPage
+                        delegate: Item {
+                            id: shotCell
+                            required property int index
+                            readonly property var entry: root.visibleScreenshots[index] || null
+                            readonly property bool filled: entry !== null
+                            readonly property bool isSelected: filled && root.selectedScreenshot === index
+                            readonly property bool justCopied: filled && root.copiedPath === entry.path
+
+                            width: (shotCol.width - 18) / 4
+                            height: width * 9 / 16
+
+                            Rectangle {
+                                anchors.fill: parent
+                                color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, shotCell.filled ? 0.04 : 0.02)
+                                border.color: shotCell.isSelected ? root.seal : root.sep
+                                border.width: 1
+                                antialiasing: true
+                            }
+
+                            Image {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                visible: shotCell.filled
+                                source: shotCell.filled ? "file://" + shotCell.entry.path : ""
+                                // Decode to a thumbnail bitmap so a screen
+                                // of 4K PNGs doesn't balloon RAM.
+                                sourceSize.width: 312
+                                sourceSize.height: 192
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: true
+                                clip: true
+                                opacity: shotMouse.containsMouse || shotCell.isSelected ? 1.0 : 0.85
+                                Behavior on opacity { NumberAnimation { duration: 140 } }
+                            }
+
+                            // Hover scrim so the cursor's position is
+                            // legible against any underlying screenshot.
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                color: "transparent"
+                                border.color: root.seal
+                                border.width: shotMouse.containsMouse && !shotCell.isSelected ? 1 : 0
+                                visible: shotCell.filled
+                                antialiasing: true
+                                Behavior on border.width { NumberAnimation { duration: 120 } }
+                            }
+
+                            // Copy ack: a seal-tinted wash and centred
+                            // "COPIED" tag that snap on the moment
+                            // wl-copy fires and fade out over ~1.4s as
+                            // copiedReset clears root.copiedPath. The
+                            // border thickens at the same time so the
+                            // tile reads as briefly "captured" even from
+                            // peripheral vision.
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.28)
+                                border.color: root.seal
+                                border.width: 2
+                                visible: opacity > 0.01
+                                opacity: shotCell.justCopied ? 1 : 0
+                                antialiasing: true
+                                Behavior on opacity {
+                                    NumberAnimation {
+                                        duration: shotCell.justCopied ? 80 : 600
+                                        easing.type: shotCell.justCopied ? Easing.OutQuad : Easing.InCubic
+                                    }
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "COPIED"
+                                    color: root.seal.hsvValue < 0.5 ? root.ink : root.paper
+                                    font.family: root.mono
+                                    font.pixelSize: 11
+                                    font.letterSpacing: 3
+                                    font.weight: Font.Medium
+                                }
+                            }
+
+                            MouseArea {
+                                id: shotMouse
+                                anchors.fill: parent
+                                hoverEnabled: shotCell.filled
+                                enabled: shotCell.filled
+                                cursorShape: shotCell.filled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                onEntered: root.selectedScreenshot = shotCell.index
+                                onClicked: (e) => {
+                                    if (!shotCell.filled) return;
+                                    root.selectedScreenshot = shotCell.index;
+                                    if (e.button === Qt.RightButton) {
+                                        root.copyScreenshotToClipboard(shotCell.entry.path);
+                                    } else {
+                                        // Open in xdg-open and dismiss
+                                        // — the popup has done its job
+                                        // and the user wants the viewer
+                                        // to take focus.
+                                        root.run("xdg-open " + JSON.stringify(shotCell.entry.path));
+                                        root.screenshotsVisible = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Footer: timestamp + actions. Visible only when a thumb
+                // is hovered/selected; collapses cleanly otherwise.
+                Rectangle {
+                    width: parent.width
+                    height: 1
+                    color: root.sep
+                    visible: root.selectedScreenshot >= 0
+                            && root.visibleScreenshots[root.selectedScreenshot] !== undefined
+                }
+
+                Item {
+                    width: parent.width
+                    height: 22
+                    visible: root.selectedScreenshot >= 0
+                            && root.visibleScreenshots[root.selectedScreenshot] !== undefined
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: {
+                            const e = root.visibleScreenshots[root.selectedScreenshot];
+                            return e ? e.label : "";
+                        }
+                        color: root.ink
+                        font.family: root.mono
+                        font.pixelSize: 11
+                        font.letterSpacing: 2
+                    }
+
+                    // Hint: click opens (xdg-open), right-click copies.
+                    // Swaps to a seal-coloured "COPIED" ack while
+                    // root.copiedPath is set (Timer clears it ~1.4s
+                    // after the action), then eases back to the resting
+                    // hint.
+                    Text {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.copiedPath !== "" ? "COPIED TO CLIPBOARD" : "RIGHT-CLICK TO COPY"
+                        color: root.copiedPath !== "" ? root.seal : root.sumi
+                        font.family: root.mono
+                        font.pixelSize: 11
+                        font.letterSpacing: 2
+                        opacity: root.copiedPath !== "" ? 1.0 : 0.7
+                        Behavior on color { ColorAnimation { duration: 180 } }
+                        Behavior on opacity { NumberAnimation { duration: 180 } }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------- IPC ----------
+    // Lets external keybinds drive the screenshots popup. Wire up in
+    // hyprland with e.g.:
+    //   bind = SUPER, P, exec, qs ipc call screenshots toggle
+    IpcHandler {
+        target: "screenshots"
+        function toggle(): void {
+            if (root.screenshotsVisible) root.screenshotsVisible = false;
+            else root.openScreenshots();
+        }
+        function open(): void { root.openScreenshots(); }
+        function close(): void { root.screenshotsVisible = false; }
     }
 
     // ---------- Components ----------
