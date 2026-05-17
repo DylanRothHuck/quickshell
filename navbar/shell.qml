@@ -87,6 +87,29 @@ ShellRoot {
         return ({top: "↑", right: "→", bottom: "↓", left: "←"})[root.barEdge] || "?";
     }
 
+    // ---------- Tooltips ----------
+    // A single overlay panel reads these and renders the label near the
+    // hovered icon. Positions are bar-window-local; the overlay translates
+    // them into its own (full-screen) coordinate space based on barEdge.
+    property string tooltipText: ""
+    property real   tooltipBarX: 0
+    property real   tooltipBarY: 0
+    property bool   tooltipShown: false
+
+    function showTooltip(text, x, y) {
+        if (!text) return;
+        root.tooltipText  = text;
+        root.tooltipBarX  = x;
+        root.tooltipBarY  = y;
+        root.tooltipShown = true;
+    }
+
+    function hideTooltip(text) {
+        // Guard against a late-fired hide from a module the cursor has
+        // already left for another tooltip-bearing module.
+        if (!text || root.tooltipText === text) root.tooltipShown = false;
+    }
+
     // ---------- State ----------
     property int activeWs: 1
     property var existingWs: [1, 2, 3, 4, 5]
@@ -1101,13 +1124,25 @@ ShellRoot {
                     Behavior on color { ColorAnimation { duration: 180 } }
                 }
 
+                Timer {
+                    id: clockTipDelay
+                    interval: 320
+                    onTriggered: {
+                        const p = clockItem.mapToItem(null, clockItem.width / 2, clockItem.height / 2);
+                        root.showTooltip("Calendar", p.x, p.y);
+                    }
+                }
+
                 MouseArea {
                     id: clockMouse
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onEntered: clockBloom.fire(mouseX, mouseY)
+                    onEntered: { clockBloom.fire(mouseX, mouseY); clockTipDelay.restart(); }
+                    onExited:  { clockTipDelay.stop(); root.hideTooltip("Calendar"); }
                     onClicked: {
+                        clockTipDelay.stop();
+                        root.hideTooltip("Calendar");
                         if (root.calendarVisible) root.calendarVisible = false;
                         else root.openCalendar();
                     }
@@ -1128,6 +1163,7 @@ ShellRoot {
 
                 Module {
                     glyph: root.icoOmarchy
+                    tooltip: "Menu · right: terminal"
                     color: root.seal
                     fontFamily: "omarchy"
                     fontSize: 14
@@ -1163,6 +1199,11 @@ ShellRoot {
                     // lands; a "?" marks an unreachable network.
                     glyph: root.weatherUnavailable ? "?"
                            : (root.weatherLoaded ? root.weatherIcon : "·")
+                    tooltip: root.weatherUnavailable
+                             ? "Weather · offline"
+                             : (root.weatherLoaded
+                                ? "Weather · " + root.weatherTempC + "°C"
+                                : "Weather · loading")
                     color: root.weatherUnavailable ? root.sumi : root.ink
                     fontSize: 13
                     onActivated: {
@@ -1177,6 +1218,7 @@ ShellRoot {
                     // display popup (warmth / brightness / gamma / monitor
                     // tweaks); right-click jumps straight to a reset.
                     glyph: root.icoDisplay
+                    tooltip: "Display · right: reset"
                     color: (root.warmthK < 6500 || root.gammaPct !== 100 || root.brightnessPct < 100)
                            ? root.seal : root.ink
                     onActivated: {
@@ -1190,6 +1232,7 @@ ShellRoot {
                     // Nerd Font mdi-camera (U+F0100). Left-click browses
                     // recent shots; right-click triggers a fresh capture.
                     glyph: root.icoCamera
+                    tooltip: "Screenshots · right: capture"
                     onActivated: {
                         if (root.screenshotsVisible) root.screenshotsVisible = false;
                         else root.openScreenshots();
@@ -1205,18 +1248,21 @@ ShellRoot {
                 // bar-position chevron.
                 Module {
                     glyph: "󰍛"
+                    tooltip: "CPU · " + Math.round(root.cpuVal) + "%"
                     color: root.cpuVal > 80 ? root.seal : root.ink
                     onActivated: root.run("omarchy-launch-or-focus-tui btop")
                 }
 
                 Module {
                     glyph: root.btIcon
+                    tooltip: "Bluetooth"
                     onActivated: root.run("omarchy-launch-bluetooth")
                 }
 
                 Module {
                     id: netMod
                     glyph: root.netIcon
+                    tooltip: "Network"
                     onActivated: root.run("omarchy-launch-wifi")
 
                     // Network-burst dot: traverses the wifi glyph's outermost
@@ -1267,22 +1313,94 @@ ShellRoot {
 
                 Module {
                     glyph: root.audioIcon
+                    tooltip: "Audio · right: mute"
                     onActivated: root.run("omarchy-launch-audio")
                     onRightActivated: root.run("pamixer -t")
                 }
 
                 Module {
                     glyph: root.batteryIcon()
+                    tooltip: "Battery · " + root.batVal + "%"
                     color: root.batVal <= 10 ? root.seal : root.batVal <= 20 ? root.indigo : root.ink
                     onActivated: root.run("omarchy-menu power")
                 }
 
                 Module {
                     glyph: root.edgeArrow()
+                    tooltip: "Bar edge · " + root.barEdge
                     color: root.sumi
                     fontSize: 12
                     onActivated: root.cycleBarEdge()
                 }
+            }
+        }
+    }
+
+    // ---------- Tooltip overlay ----------
+    // Click-through layer pinned above everything. Position is computed
+    // from the bar-window-local anchor (set by the hovered module) and
+    // the current barEdge so the tip sits just off the bar's inner edge,
+    // centred on the icon along the bar's axis.
+    PanelWindow {
+        id: tooltipOverlay
+        color: "transparent"
+        anchors { top: true; bottom: true; left: true; right: true }
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.namespace: "omarchy-tooltip"
+        mask: Region {}
+
+        // Keep alive briefly so the fade-out can play before the window
+        // is torn down on first show; afterwards visibility tracks reveal.
+        property real reveal: root.tooltipShown ? 1 : 0
+        Behavior on reveal {
+            NumberAnimation {
+                duration: root.tooltipShown ? 160 : 120
+                easing.type: root.tooltipShown ? Easing.OutCubic : Easing.InCubic
+            }
+        }
+        visible: reveal > 0.001
+
+        Rectangle {
+            id: tip
+            readonly property int gap:  6
+            readonly property int padH: 8
+            readonly property int padV: 3
+
+            width:  tipLabel.implicitWidth  + padH * 2
+            height: tipLabel.implicitHeight + padV * 2
+
+            // X / Y derive from barEdge: the tip hugs the bar's inner
+            // edge along the perpendicular axis and centres on the icon
+            // along the parallel axis (clamped a few px from the screen
+            // edge so long labels don't fall off-screen).
+            x: {
+                if (root.barEdge === "left")  return root.barHeight + gap;
+                if (root.barEdge === "right") return parent.width - root.barHeight - width - gap;
+                const center = root.tooltipBarX;
+                return Math.max(4, Math.min(parent.width - width - 4, center - width / 2));
+            }
+            y: {
+                if (root.barEdge === "top")    return root.barHeight + gap;
+                if (root.barEdge === "bottom") return parent.height - root.barHeight - height - gap;
+                const center = root.tooltipBarY;
+                return Math.max(4, Math.min(parent.height - height - 4, center - height / 2));
+            }
+
+            color: root.bg
+            border.color: root.sep
+            border.width: 1
+            radius: 0
+            opacity: tooltipOverlay.reveal
+
+            Text {
+                id: tipLabel
+                anchors.centerIn: parent
+                text: root.tooltipText
+                color: root.ink
+                font.family: root.mono
+                font.pixelSize: 10
+                font.letterSpacing: 1
             }
         }
     }
@@ -2806,7 +2924,9 @@ ShellRoot {
     }
 
     component Module: Item {
+        id: modItem
         property string glyph: ""
+        property string tooltip: ""
         property color color: root.ink
         property string fontFamily: root.mono
         property int fontSize: 12
@@ -2817,6 +2937,18 @@ ShellRoot {
         Layout.alignment: root.isHorizontal ? Qt.AlignVCenter : Qt.AlignHCenter
         Layout.preferredWidth:  root.isHorizontal ? 24 : root.barHeight
         Layout.preferredHeight: root.isHorizontal ? root.barHeight : 24
+
+        // Short hover delay before the tooltip appears so a sweep across
+        // the bar doesn't flash labels for every icon in passing.
+        Timer {
+            id: tipDelay
+            interval: 320
+            onTriggered: {
+                if (!modItem.tooltip) return;
+                const p = modItem.mapToItem(null, modItem.width / 2, modItem.height / 2);
+                root.showTooltip(modItem.tooltip, p.x, p.y);
+            }
+        }
 
         Rectangle {
             anchors.fill: parent
@@ -2842,8 +2974,17 @@ ShellRoot {
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
-            onEntered: bloom.fire(mouseX, mouseY)
+            onEntered: {
+                bloom.fire(mouseX, mouseY);
+                if (modItem.tooltip) tipDelay.restart();
+            }
+            onExited: {
+                tipDelay.stop();
+                root.hideTooltip(modItem.tooltip);
+            }
             onClicked: (e) => {
+                tipDelay.stop();
+                root.hideTooltip(modItem.tooltip);
                 if (e.button === Qt.RightButton) parent.rightActivated();
                 else parent.activated();
             }
