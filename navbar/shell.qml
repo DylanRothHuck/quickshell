@@ -69,13 +69,10 @@ ShellRoot {
     readonly property int barHeight: 26
 
     // ---------- Edge ----------
-    // Which screen edge the bar lives on. Cycles top → right → bottom →
-    // left via the edge-toggle Module. Drives the bar anchors, the bar's
-    // internal flow (horizontal vs vertical Row/Column), and the direction
-    // the calendar popup unrolls from.
+    // Drives bar anchors, internal Row/Column flow, and where the toggle
+    // arrow points.
     property string barEdge: "top"
     readonly property bool isHorizontal: barEdge === "top" || barEdge === "bottom"
-    readonly property bool isLeading:    barEdge === "top" || barEdge === "left"
 
     function cycleBarEdge() {
         const edges = ["top", "right", "bottom", "left"];
@@ -136,20 +133,17 @@ ShellRoot {
         return new Date(year, month - 1, day);
     }
 
-    // Norwegian red days (helligdager). Returns the name, or "" if not a
-    // holiday. Fixed dates + Easter-relative moveable feasts covers all
-    // official Norwegian public holidays.
-    function norwegianHoliday(year, month, day) {
+    // Norwegian red days. Caller passes precomputed `easter` (Date) so the
+    // outer loop in calendarCells doesn't recompute it per day.
+    function norwegianHoliday(year, month, day, easter) {
         if (month === 0  && day === 1)  return "Nyttårsdag";
         if (month === 4  && day === 1)  return "Arbeidernes dag";
         if (month === 4  && day === 17) return "Grunnlovsdagen";
         if (month === 11 && day === 25) return "Første juledag";
         if (month === 11 && day === 26) return "Andre juledag";
 
-        const easter = root.easterDate(year);
-        const dayMs = 86400000;
         const target = new Date(year, month, day);
-        const offset = Math.round((target.getTime() - easter.getTime()) / dayMs);
+        const offset = Math.round((target.getTime() - easter.getTime()) / 86400000);
 
         if (offset === -3) return "Skjærtorsdag";
         if (offset === -2) return "Langfredag";
@@ -163,23 +157,24 @@ ShellRoot {
     }
 
     readonly property var calendarCells: {
-        root.calendarTick;
+        root.calendarTick;  // forces recompute on same-month re-open
         const now = new Date();
-        const m = now.getMonth() + root.calendarMonthOffset;
-        const first = new Date(now.getFullYear(), m, 1);
-        const lastDay = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+        const first = new Date(now.getFullYear(), now.getMonth() + root.calendarMonthOffset, 1);
+        const year = first.getFullYear();
+        const month = first.getMonth();
+        const lastDay = new Date(year, month + 1, 0).getDate();
         // Monday-first week: shift Sunday (0) to slot 6.
         const startDay = (first.getDay() + 6) % 7;
         const today = new Date();
-        const isCurrentMonth = first.getFullYear() === today.getFullYear()
-                            && first.getMonth() === today.getMonth();
+        const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
+        const easter = root.easterDate(year);
         const cells = [];
         for (let i = 0; i < startDay; i++) cells.push({day: 0, today: false, holiday: ""});
         for (let d = 1; d <= lastDay; d++) {
             cells.push({
                 day: d,
                 today: isCurrentMonth && d === today.getDate(),
-                holiday: root.norwegianHoliday(first.getFullYear(), first.getMonth(), d)
+                holiday: root.norwegianHoliday(year, month, d, easter)
             });
         }
         while (cells.length < 42) cells.push({day: 0, today: false, holiday: ""});
@@ -187,28 +182,24 @@ ShellRoot {
     }
 
     readonly property string calendarMonthName: {
-        root.calendarTick;
         const months = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
                         "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
         const now = new Date();
-        const d = new Date(now.getFullYear(), now.getMonth() + root.calendarMonthOffset, 1);
-        return months[d.getMonth()];
+        return months[(now.getMonth() + root.calendarMonthOffset + 12000) % 12];
     }
 
     readonly property string calendarYear: {
-        root.calendarTick;
         const now = new Date();
         const d = new Date(now.getFullYear(), now.getMonth() + root.calendarMonthOffset, 1);
         return String(d.getFullYear());
     }
 
-    // Currently selected day-of-month within the displayed month; 0 = none.
-    // Reset to 0 when navigating months (the selection only makes sense
-    // for the visible month). Set to today when opening the popup.
+    // Selected day-of-month within the displayed month; 0 = none. Reset
+    // on month nav since the selection only makes sense within the
+    // visible month.
     property int selectedDay: 0
 
     readonly property string selectedDayDetail: {
-        root.calendarTick;
         if (root.selectedDay <= 0) return "";
         const days   = ["SUNDAY","MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"];
         const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
@@ -218,12 +209,12 @@ ShellRoot {
     }
 
     readonly property string selectedDayHoliday: {
-        root.calendarTick;
         if (root.selectedDay <= 0) return "";
-        const now = new Date();
-        const m = now.getMonth() + root.calendarMonthOffset;
-        const d = new Date(now.getFullYear(), m, root.selectedDay);
-        return root.norwegianHoliday(d.getFullYear(), d.getMonth(), d.getDate());
+        const cells = root.calendarCells;
+        for (let i = 0; i < cells.length; i++) {
+            if (cells[i].day === root.selectedDay) return cells[i].holiday;
+        }
+        return "";
     }
 
     function openCalendar() {
@@ -432,8 +423,9 @@ ShellRoot {
         running: false
         // $2 is rx_bytes, $10 is tx_bytes per /proc/net/dev's column layout.
         // Skip loopback so localhost chatter doesn't count as "network".
-        command: ["bash", "-lc",
-            "awk 'NR>2 && $1!~/^lo:/ {s+=$2+$10} END {print s+0}' /proc/net/dev"]
+        // Direct argv (no shell) — saves the per-poll login-shell startup.
+        command: ["awk", "NR>2 && $1!~/^lo:/ {s+=$2+$10} END {print s+0}",
+                  "/proc/net/dev"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const cur = parseFloat(this.text.trim());
@@ -470,7 +462,8 @@ ShellRoot {
     Process {
         id: cursorProbe
         running: false
-        command: ["bash", "-lc", "hyprctl cursorpos 2>/dev/null"]
+        // sh -c (no login profile) — keeps the 3Hz poll cheap.
+        command: ["sh", "-c", "hyprctl cursorpos 2>/dev/null"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const cur = this.text.trim();
@@ -803,8 +796,6 @@ ShellRoot {
                     onActivated: root.run("omarchy-menu power")
                 }
 
-                // Edge toggle — click to cycle top → right → bottom → left.
-                // The arrow shows the current edge.
                 Module {
                     glyph: root.edgeArrow()
                     color: root.sumi
@@ -911,50 +902,19 @@ ShellRoot {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 12
 
-                        Text {
+                        CalendarChevron {
                             text: "‹"
-                            color: prevMouse.containsMouse ? root.seal : root.ink
-                            font.family: root.mono
-                            font.pixelSize: 24
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            MouseArea {
-                                id: prevMouse
-                                anchors.fill: parent
-                                anchors.margins: -7
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: { root.calendarMonthOffset--; root.calendarTick++; root.selectedDay = 0; }
-                            }
+                            onTriggered: { root.calendarMonthOffset--; root.calendarTick++; root.selectedDay = 0; }
                         }
-                        Text {
+                        CalendarChevron {
                             text: "•"
-                            color: todayMouse.containsMouse ? root.seal : root.sumi
-                            font.family: root.mono
+                            restColor: root.sumi
                             font.pixelSize: 19
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            MouseArea {
-                                id: todayMouse
-                                anchors.fill: parent
-                                anchors.margins: -7
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: { root.calendarMonthOffset = 0; root.calendarTick++; root.selectedDay = (new Date()).getDate(); }
-                            }
+                            onTriggered: { root.calendarMonthOffset = 0; root.calendarTick++; root.selectedDay = (new Date()).getDate(); }
                         }
-                        Text {
+                        CalendarChevron {
                             text: "›"
-                            color: nextMouse.containsMouse ? root.seal : root.ink
-                            font.family: root.mono
-                            font.pixelSize: 24
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            MouseArea {
-                                id: nextMouse
-                                anchors.fill: parent
-                                anchors.margins: -7
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: { root.calendarMonthOffset++; root.calendarTick++; }
-                            }
+                            onTriggered: { root.calendarMonthOffset++; root.calendarTick++; root.selectedDay = 0; }
                         }
                     }
                 }
@@ -1015,37 +975,34 @@ ShellRoot {
                             readonly property bool isCurrentMonth: modelData.day !== 0
                             readonly property bool isToday: modelData.today
                             readonly property bool isHoliday: modelData.holiday !== ""
-                            readonly property bool isSelected: dayCell.isCurrentMonth && root.selectedDay === modelData.day
+                            readonly property bool isSelected: isCurrentMonth && root.selectedDay === modelData.day
 
-                            // Today chip.
+                            readonly property color textColor: {
+                                if (isToday) return root.seal.hsvValue < 0.5 ? root.ink : root.paper;
+                                if (!isCurrentMonth) return root.sumi;
+                                return (isWeekend || isHoliday) ? root.seal : root.ink;
+                            }
+
                             Rectangle {
                                 anchors.centerIn: parent
-                                width: 29
-                                height: 29
-                                radius: 14
+                                width: 29; height: 29; radius: 14
                                 color: root.seal
                                 visible: dayCell.isToday
                                 antialiasing: true
                             }
 
-                            // Hover halo on regular cells.
                             Rectangle {
                                 anchors.centerIn: parent
-                                width: 29
-                                height: 29
-                                radius: 14
+                                width: 29; height: 29; radius: 14
                                 color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
                                 visible: dayMouse.containsMouse && !dayCell.isToday && dayCell.isCurrentMonth
                                 antialiasing: true
                                 Behavior on opacity { NumberAnimation { duration: 120 } }
                             }
 
-                            // Selected ring — non-today selection indicator.
                             Rectangle {
                                 anchors.centerIn: parent
-                                width: 29
-                                height: 29
-                                radius: 14
+                                width: 29; height: 29; radius: 14
                                 color: "transparent"
                                 border.color: root.seal
                                 border.width: 1
@@ -1056,11 +1013,7 @@ ShellRoot {
                             Text {
                                 anchors.centerIn: parent
                                 text: dayCell.modelData.day === 0 ? "" : dayCell.modelData.day
-                                color: dayCell.isToday
-                                       ? (root.seal.hsvValue < 0.5 ? root.ink : root.paper)
-                                       : (dayCell.isCurrentMonth
-                                          ? ((dayCell.isWeekend || dayCell.isHoliday) ? root.seal : root.ink)
-                                          : root.sumi)
+                                color: dayCell.textColor
                                 opacity: dayCell.isCurrentMonth ? 1.0 : 0.35
                                 font.family: root.mono
                                 font.pixelSize: 15
@@ -1081,9 +1034,8 @@ ShellRoot {
                     }
                 }
 
-                // Detail row: full date for the selected day, plus the
-                // Norwegian holiday name on a second line when applicable.
-                // Hides when no selection (Column skips invisible kids).
+                // Column skips invisible children, so visible: bindings on
+                // these rows collapse the layout when nothing's selected.
                 Rectangle {
                     width: parent.width
                     height: 1
@@ -1131,6 +1083,29 @@ ShellRoot {
     // clipboard-ripple — same halo/ox/oy/haloR/haloO vocabulary, just
     // scaled down for the bar (~250 ms, no inner core pulse) and clipped to
     // the host bounds so neighbours don't get splashed.
+
+    // Hover-reactive glyph used for the calendar's prev/today/next controls.
+    // Hit area expands -7px around the glyph so the click target is fat.
+    component CalendarChevron: Text {
+        property color restColor: root.ink
+        property color hotColor:  root.seal
+        signal triggered()
+
+        color: chevronMouse.containsMouse ? hotColor : restColor
+        font.family: root.mono
+        font.pixelSize: 24
+        Behavior on color { ColorAnimation { duration: 120 } }
+
+        MouseArea {
+            id: chevronMouse
+            anchors.fill: parent
+            anchors.margins: -7
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: parent.triggered()
+        }
+    }
+
     component Bloom: Item {
         id: bloomRoot
         anchors.fill: parent
