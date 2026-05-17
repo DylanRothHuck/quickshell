@@ -301,6 +301,124 @@ ShellRoot {
         root.calendarVisible = true;
     }
 
+    // ---------- Display popup state ----------
+    // Held locally because hyprsunset has no `get` verb — we mirror values
+    // so the slider tracks reflect what was last set, even across daemon
+    // restarts.
+    property bool  displayVisible: false
+    property real  warmthK: 6500
+    property int   brightnessPct: 100
+    property real  gammaPct: 100
+    property string monitorName: "eDP-1"
+    property string monitorRes:  "2880x1800"
+    property real  monitorRate:  60.0
+    property real  monitorScale: 2.0
+    readonly property var displayPresets: [
+        { label: "DAY",     warmth: 6500, gamma: 100, bright: 100 },
+        { label: "READING", warmth: 4500, gamma: 95,  bright: 60  },
+        { label: "NIGHT",   warmth: 3000, gamma: 85,  bright: 30  },
+        { label: "CANDLE",  warmth: 2000, gamma: 80,  bright: 15  }
+    ]
+    property int  selectedPreset: 0
+    // ↑/↓ moves; ←/→ nudges sliders (0..2) or cycles the preset row (3).
+    // Rows 4..6 are EDIT / BLANK / RESET — Enter activates.
+    property int  displayRow: 0
+
+    // First hyprsunset call spawns the daemon and waits for its socket; on
+    // every later call the prelude collapses to a single pgrep test. Track
+    // success so we can skip even that after one confirmed reply.
+    property bool sunsetReady: false
+    readonly property string ensureSunset:
+        "pgrep -x hyprsunset >/dev/null"
+        + " || { uwsm app -- hyprsunset --gamma_max 200 >/dev/null 2>&1 &"
+        + "      for i in 1 2 3 4 5 6 7 8; do"
+        + "        hyprctl hyprsunset identity >/dev/null 2>&1 && break;"
+        + "        sleep 0.08;"
+        + "      done; }; "
+
+    function openDisplay() {
+        displayProbe.running = true;
+        root.displayRow = 0;
+        root.displayVisible = true;
+    }
+
+    function runSunset(verb) {
+        const cmd = "hyprctl hyprsunset " + verb;
+        if (root.sunsetReady) root.run(cmd);
+        else { root.run(root.ensureSunset + cmd); root.sunsetReady = true; }
+    }
+
+    function setWarmth(k) {
+        k = Math.max(1000, Math.min(6500, Math.round(k / 50) * 50));
+        root.warmthK = k;
+        // identity skips the GPU matrix entirely at full daylight.
+        root.runSunset(k >= 6500 ? "identity" : "temperature " + k);
+    }
+    function setBrightness(pct) {
+        pct = Math.max(1, Math.min(100, Math.round(pct)));
+        root.brightnessPct = pct;
+        root.run("brightnessctl set " + pct + "%");
+    }
+    function setGamma(pct) {
+        pct = Math.max(50, Math.min(150, Math.round(pct)));
+        root.gammaPct = pct;
+        root.runSunset("gamma " + pct);
+    }
+    function applyPreset(p) {
+        root.warmthK = p.warmth;
+        root.gammaPct = p.gamma;
+        root.brightnessPct = p.bright;
+        const w = (p.warmth >= 6500) ? "identity" : "temperature " + p.warmth;
+        const prelude = root.sunsetReady ? "" : root.ensureSunset;
+        root.run(prelude
+                 + "hyprctl hyprsunset " + w
+                 + " && hyprctl hyprsunset gamma " + p.gamma
+                 + " && brightnessctl set " + p.bright + "%");
+        root.sunsetReady = true;
+    }
+    function blankScreen() {
+        // Wait out the close animation before the panel blanks, or the
+        // reveal-out visibly stutters.
+        root.run("sleep 0.25 && hyprctl dispatch dpms off");
+        root.displayVisible = false;
+    }
+    function resetDisplay() {
+        root.warmthK = 6500;
+        root.gammaPct = 100;
+        root.brightnessPct = 100;
+        const prelude = root.sunsetReady ? "" : root.ensureSunset;
+        root.run(prelude
+                 + "hyprctl hyprsunset identity"
+                 + " && hyprctl hyprsunset gamma 100"
+                 + " && brightnessctl set 100%");
+        root.sunsetReady = true;
+    }
+
+    // ---------- Display probe ----------
+    Process {
+        id: displayProbe
+        running: false
+        command: ["bash", "-lc",
+            "m=$(hyprctl monitors -j 2>/dev/null"
+            + " | jq -r '.[0] | [.name,(\"\\(.width)x\\(.height)\"),(.refreshRate|tostring),(.scale|tostring)] | join(\"|\")' 2>/dev/null);"
+            + " b=$(brightnessctl get 2>/dev/null);"
+            + " mb=$(brightnessctl max 2>/dev/null);"
+            + " pct=100;"
+            + " if [ -n \"$b\" ] && [ -n \"$mb\" ] && [ \"$mb\" -gt 0 ]; then pct=$(( b * 100 / mb )); fi;"
+            + " printf '%s|%d' \"$m\" \"$pct\""]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const p = this.text.trim().split("|");
+                if (p.length < 5) return;
+                root.monitorName   = p[0] || "eDP-1";
+                root.monitorRes    = p[1] || "2880x1800";
+                root.monitorRate   = parseFloat(p[2]) || 60.0;
+                root.monitorScale  = parseFloat(p[3]) || 1.0;
+                root.brightnessPct = parseInt(p[4]) || 100;
+            }
+        }
+    }
+
     // ---------- Palette loader ----------
     // Reads omarchy's colors.toml and re-applies the palette on any change.
     // The file is rewritten in place when `omarchy theme set` runs, so
@@ -924,6 +1042,20 @@ ShellRoot {
                 }
 
                 Module {
+                    // Nerd Font mdi-monitor (U+F0379). Left-click opens the
+                    // display popup (warmth / brightness / gamma / monitor
+                    // tweaks); right-click jumps straight to a reset.
+                    glyph: root.icoDisplay
+                    color: (root.warmthK < 6500 || root.gammaPct !== 100 || root.brightnessPct < 100)
+                           ? root.seal : root.ink
+                    onActivated: {
+                        if (root.displayVisible) root.displayVisible = false;
+                        else root.openDisplay();
+                    }
+                    onRightActivated: root.resetDisplay()
+                }
+
+                Module {
                     // Nerd Font mdi-camera (U+F0100). Left-click browses
                     // recent shots; right-click triggers a fresh capture.
                     glyph: root.icoCamera
@@ -1526,6 +1658,273 @@ ShellRoot {
         }
     }
 
+    // ---------- Display popup ----------
+    // Same shell as calendar/screenshots: full-screen transparent overlay
+    // with a centred card that scales up from its centre. Sliders, a row of
+    // four warmth presets, monitor cycle controls, and a reset chevron.
+    PanelWindow {
+        id: displayPopup
+        visible: root.displayVisible || reveal > 0.001
+        color: "transparent"
+        anchors { top: true; bottom: true; left: true; right: true }
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.namespace: "omarchy-display"
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+
+        property real reveal: root.displayVisible ? 1 : 0
+        Behavior on reveal {
+            NumberAnimation {
+                duration: root.displayVisible ? 220 : 140
+                easing.type: root.displayVisible ? Easing.OutCubic : Easing.InCubic
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.displayVisible = false
+        }
+
+        Rectangle {
+            id: displayCard
+            anchors.centerIn: parent
+            width: 480
+            height: dispCol.implicitHeight + 34
+            color: root.bg
+            border.color: root.sep
+            border.width: 1
+            radius: 0
+
+            transformOrigin: Item.Center
+            scale: displayPopup.reveal
+
+            focus: root.displayVisible
+            Keys.onPressed: function(event) {
+                const k = event.key;
+                if (k === Qt.Key_Escape || k === Qt.Key_Q) {
+                    root.displayVisible = false;
+                } else if (k === Qt.Key_Down || k === Qt.Key_J) {
+                    root.displayRow = Math.min(6, root.displayRow + 1);
+                } else if (k === Qt.Key_Up || k === Qt.Key_K) {
+                    root.displayRow = Math.max(0, root.displayRow - 1);
+                } else if (k === Qt.Key_Left || k === Qt.Key_H) {
+                    if (root.displayRow === 0)      root.setWarmth(root.warmthK - 250);
+                    else if (root.displayRow === 1) root.setBrightness(root.brightnessPct - 5);
+                    else if (root.displayRow === 2) root.setGamma(root.gammaPct - 5);
+                    else if (root.displayRow === 3) {
+                        const n = root.displayPresets.length;
+                        root.selectedPreset = (root.selectedPreset - 1 + n) % n;
+                    }
+                } else if (k === Qt.Key_Right || k === Qt.Key_L) {
+                    if (root.displayRow === 0)      root.setWarmth(root.warmthK + 250);
+                    else if (root.displayRow === 1) root.setBrightness(root.brightnessPct + 5);
+                    else if (root.displayRow === 2) root.setGamma(root.gammaPct + 5);
+                    else if (root.displayRow === 3) {
+                        root.selectedPreset = (root.selectedPreset + 1) % root.displayPresets.length;
+                    }
+                } else if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space) {
+                    if (root.displayRow === 3) {
+                        root.applyPreset(root.displayPresets[root.selectedPreset]);
+                    } else if (root.displayRow === 4) {
+                        root.run("omarchy-launch-editor ~/.config/hypr/monitors.lua");
+                        root.displayVisible = false;
+                    } else if (root.displayRow === 5) root.blankScreen();
+                    else if (root.displayRow === 6) root.resetDisplay();
+                } else if (k >= Qt.Key_1 && k <= Qt.Key_4) {
+                    const idx = k - Qt.Key_1;
+                    if (idx < root.displayPresets.length) {
+                        root.selectedPreset = idx;
+                        root.applyPreset(root.displayPresets[idx]);
+                    }
+                } else if (k === Qt.Key_R) {
+                    root.resetDisplay();
+                } else if (k === Qt.Key_B) {
+                    root.blankScreen();
+                } else if (k === Qt.Key_E) {
+                    root.run("omarchy-launch-editor ~/.config/hypr/monitors.lua");
+                    root.displayVisible = false;
+                } else {
+                    return;
+                }
+                event.accepted = true;
+            }
+
+            // Swallow clicks so the card body doesn't bubble to the
+            // outer dismiss MouseArea.
+            MouseArea { anchors.fill: parent }
+
+            Column {
+                id: dispCol
+                anchors.fill: parent
+                anchors.margins: 17
+                spacing: 12
+
+                Item {
+                    width: parent.width
+                    height: 43
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        Text {
+                            text: "DISPLAY"
+                            color: root.ink
+                            font.family: root.mono
+                            font.pixelSize: 19
+                            font.letterSpacing: 4
+                            font.weight: Font.Medium
+                        }
+                        Text {
+                            text: Math.round(root.warmthK) + "K  ·  BR " + root.brightnessPct
+                                  + "  ·  γ " + Math.round(root.gammaPct)
+                                  + "  ·  " + root.monitorRate.toFixed(0) + "HZ"
+                            color: root.sumi
+                            font.family: root.mono
+                            font.pixelSize: 11
+                            font.letterSpacing: 2
+                        }
+                    }
+
+                    Row {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 12
+                        CalendarChevron {
+                            text: root.icoRefresh
+                            restColor: root.sumi
+                            font.pixelSize: 22
+                            onTriggered: root.resetDisplay()
+                        }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
+                Repeater {
+                    model: [
+                        { label: "WARMTH",     valKey: "warmthK",       lo: 1000, hi: 6500, unit: "K", row: 0 },
+                        { label: "BRIGHTNESS", valKey: "brightnessPct", lo: 1,    hi: 100,  unit: "%", row: 1 },
+                        { label: "GAMMA",      valKey: "gammaPct",      lo: 50,   hi: 150,  unit: "",  row: 2 }
+                    ]
+                    delegate: DisplaySlider {
+                        required property var modelData
+                        width: dispCol.width
+                        label: modelData.label
+                        value: root[modelData.valKey]
+                        minV: modelData.lo
+                        maxV: modelData.hi
+                        unit: modelData.unit
+                        selected: root.displayRow === modelData.row
+                        onCommit: function(v) {
+                            if      (modelData.row === 0) root.setWarmth(v);
+                            else if (modelData.row === 1) root.setBrightness(v);
+                            else                          root.setGamma(v);
+                        }
+                        onFocusRequested: root.displayRow = modelData.row
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
+                Item {
+                    width: parent.width
+                    height: 38
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        text: "PRESETS"
+                        color: root.displayRow === 3 ? root.seal : root.sumi
+                        font.family: root.mono
+                        font.pixelSize: 10
+                        font.letterSpacing: 2
+                        Behavior on color { ColorAnimation { duration: 140 } }
+                    }
+
+                    Row {
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        spacing: 6
+
+                        Repeater {
+                            model: root.displayPresets
+                            delegate: DisplayChip {
+                                required property var modelData
+                                required property int index
+                                label: modelData.label
+                                selected: root.selectedPreset === index
+                                onActivated: {
+                                    root.selectedPreset = index;
+                                    root.displayRow = 3;
+                                    root.applyPreset(modelData);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
+                // Scale / rate / VRR are read-only — Hyprland's lua parser
+                // refuses runtime `keyword monitor` ("Use eval."). The
+                // EDIT chip below opens monitors.lua for persistent edits.
+                Text {
+                    width: parent.width
+                    text: "MONITOR · " + root.monitorName + " · " + root.monitorRes
+                          + " · ×" + root.monitorScale.toFixed(2)
+                    color: root.sumi
+                    font.family: root.mono
+                    font.pixelSize: 10
+                    font.letterSpacing: 2
+                }
+
+                Item {
+                    width: parent.width
+                    height: 26
+                    DisplayChip {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: "EDIT MONITORS"
+                        selected: root.displayRow === 4
+                        onActivated: {
+                            root.displayRow = 4;
+                            root.run("omarchy-launch-editor ~/.config/hypr/monitors.lua");
+                            root.displayVisible = false;
+                        }
+                    }
+                    DisplayChip {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: root.icoPower + " BLANK"
+                        selected: root.displayRow === 5
+                        onActivated: { root.displayRow = 5; root.blankScreen(); }
+                    }
+                    DisplayChip {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: "RESET"
+                        selected: root.displayRow === 6
+                        onActivated: { root.displayRow = 6; root.resetDisplay(); }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep; opacity: 0.5 }
+
+                Text {
+                    width: parent.width
+                    text: "↑↓ ROW · ←→ ADJUST · 1-4 PRESET · R RESET · B BLANK · E EDIT · ESC"
+                    color: root.sumi
+                    font.family: root.mono
+                    font.pixelSize: 9
+                    font.letterSpacing: 2
+                    opacity: 0.55
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
+        }
+    }
+
     // ---------- IPC ----------
     // Lets external keybinds drive the screenshots popup. Wire up in
     // hyprland with e.g.:
@@ -1538,6 +1937,19 @@ ShellRoot {
         }
         function open(): void { root.openScreenshots(); }
         function close(): void { root.screenshotsVisible = false; }
+    }
+
+    // bind = SUPER, D, exec, qs ipc call display toggle
+    IpcHandler {
+        target: "display"
+        function toggle(): void {
+            if (root.displayVisible) root.displayVisible = false;
+            else root.openDisplay();
+        }
+        function open(): void  { root.openDisplay(); }
+        function close(): void { root.displayVisible = false; }
+        function reset(): void { root.resetDisplay(); }
+        function blank(): void { root.blankScreen(); }
     }
 
     // ---------- Components ----------
@@ -1557,6 +1969,164 @@ ShellRoot {
     // clipboard-ripple — same halo/ox/oy/haloR/haloO vocabulary, just
     // scaled down for the bar (~250 ms, no inner core pulse) and clipped to
     // the host bounds so neighbours don't get splashed.
+
+    // Labeled click-to-set bar used in the display popup. Track is a flat
+    // hairline strip with a seal-filled left portion; thumb is the boundary
+    // line. No drag handler — click anywhere on the track to jump to that
+    // value. Keeps interaction model identical to the chevron buttons.
+    // Click-to-set bar used in the display popup. No drag handler — pointer
+    // motion is coalesced through `commitTimer` so a swipe across the track
+    // emits at most one shell call every 60ms instead of one per frame.
+    component DisplaySlider: Item {
+        id: slider
+        property string label: ""
+        property real value: 0
+        property real minV: 0
+        property real maxV: 100
+        property string unit: ""
+        property bool selected: false
+
+        signal commit(real v)
+        signal focusRequested()
+
+        readonly property real norm: maxV > minV
+                                     ? Math.max(0, Math.min(1, (value - minV) / (maxV - minV)))
+                                     : 0
+        property real pendingValue: 0
+
+        function valueFromX(x) {
+            const ratio = Math.max(0, Math.min(1, x / track.width));
+            return slider.minV + ratio * (slider.maxV - slider.minV);
+        }
+
+        implicitHeight: 30
+
+        Timer {
+            id: commitTimer
+            interval: 60
+            repeat: false
+            onTriggered: slider.commit(slider.pendingValue)
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            text: slider.label
+            color: slider.selected ? root.seal : root.sumi
+            font.family: root.mono
+            font.pixelSize: 10
+            font.letterSpacing: 2
+            Behavior on color { ColorAnimation { duration: 140 } }
+        }
+        Text {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            text: Math.round(slider.value) + slider.unit
+            color: slider.selected ? root.ink : root.inkDeep
+            font.family: root.mono
+            font.pixelSize: 10
+            font.letterSpacing: 2
+            font.weight: Font.Medium
+        }
+
+        Rectangle {
+            id: track
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 2
+            height: 3
+            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
+            antialiasing: true
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: parent.width * slider.norm
+                color: root.seal
+                opacity: slider.selected ? 1.0 : 0.75
+                antialiasing: true
+                Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: 140 } }
+            }
+
+            // Thumb sits 4px above/below the track on the boundary.
+            Rectangle {
+                width: 2
+                height: 11
+                color: root.seal
+                antialiasing: true
+                x: Math.max(0, Math.min(parent.width - width,
+                            parent.width * slider.norm - width / 2))
+                y: -4
+                Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                anchors.margins: -6
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onPressed: (e) => {
+                    slider.focusRequested();
+                    slider.pendingValue = slider.valueFromX(e.x);
+                    slider.commit(slider.pendingValue);
+                }
+                onPositionChanged: (e) => {
+                    if (!pressed) return;
+                    slider.pendingValue = slider.valueFromX(e.x);
+                    commitTimer.restart();
+                }
+                onReleased: {
+                    commitTimer.stop();
+                    slider.commit(slider.pendingValue);
+                }
+            }
+        }
+    }
+
+    // Pill-shaped click target used by presets and the action row.
+    component DisplayChip: Item {
+        id: chip
+        property string label: ""
+        property bool selected: false
+        signal activated()
+
+        implicitWidth: chipText.implicitWidth + 18
+        implicitHeight: 22
+
+        Rectangle {
+            anchors.fill: parent
+            color: chipMouse.containsMouse
+                   ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10)
+                   : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.04)
+            border.color: chip.selected ? root.seal : root.sep
+            border.width: 1
+            radius: 0
+            antialiasing: true
+            Behavior on color { ColorAnimation { duration: 140 } }
+            Behavior on border.color { ColorAnimation { duration: 140 } }
+        }
+
+        Text {
+            id: chipText
+            anchors.centerIn: parent
+            text: chip.label
+            color: chip.selected ? root.ink : root.inkDeep
+            font.family: root.mono
+            font.pixelSize: 10
+            font.letterSpacing: 2
+        }
+
+        MouseArea {
+            id: chipMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: chip.activated()
+        }
+    }
 
     // Hover-reactive glyph used for the calendar's prev/today/next controls.
     // Hit area expands -7px around the glyph so the click target is fat.
