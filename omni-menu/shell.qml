@@ -65,6 +65,49 @@ ShellRoot {
     // activating a category nav row; cleared by Esc / Backspace-on-empty.
     property string categoryFilter: ""
 
+    // File-search reuses the category-drill machinery: the Files nav row
+    // sets categoryFilter to this sentinel, filteredItems pivots to fd
+    // results, and goUp/Esc unwind via the same path as any other category.
+    readonly property string fileCategory: "Files"
+    readonly property bool fileMode: root.categoryFilter === root.fileCategory
+
+    property var fileItems: []
+    readonly property bool fdRunning: fdProc.running
+
+    property string previewPath: ""
+    property string previewText: ""
+    property string previewMeta: ""
+    readonly property string previewKind: {
+        if (!root.previewPath) return "";
+        const ext = root.fileExt(root.previewPath);
+        if (root.imageExts.indexOf(ext) >= 0) return "image";
+        if (root.textExts.indexOf(ext) >= 0) return "text";
+        return "meta";
+    }
+
+    readonly property string homeDir: Quickshell.env("HOME")
+
+    // fd already respects .gitignore, the global ignore file, and skips
+    // hidden files by default. These excludes catch build dirs that
+    // aren't always gitignored.
+    readonly property var fdExcludes: [
+        "node_modules", "target", "dist", "build", ".cache",
+        ".venv", "__pycache__", ".tox", ".next", ".nuxt"
+    ]
+
+    readonly property var imageExts: [
+        "png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "avif", "svg"
+    ]
+
+    readonly property var textExts: [
+        "md", "txt", "qml", "lua", "toml", "sh", "bash", "zsh", "fish",
+        "py", "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "jsonc",
+        "yaml", "yml", "rs", "go", "c", "h", "cpp", "hpp", "cc", "hh",
+        "html", "css", "scss", "conf", "ini", "cfg", "log", "csv", "xml",
+        "rb", "java", "kt", "swift", "php", "sql", "vim", "el", "tex",
+        "gitignore", "gitconfig", "dockerfile", "makefile", "env"
+    ]
+
     function open() {
         root.query = "";
         root.selectedIndex = 0;
@@ -83,6 +126,16 @@ ShellRoot {
             return true;
         }
         return false;
+    }
+
+    // Entering or leaving file mode resets fd state. Other category drills
+    // share the same handler — clearing fileItems for them is a free no-op.
+    onCategoryFilterChanged: {
+        root.fileItems = [];
+        root.previewPath = "";
+        root.previewText = "";
+        root.previewMeta = "";
+        fdDebounce.stop();
     }
 
     // ---------- Palette loader ----------
@@ -370,6 +423,7 @@ ShellRoot {
     // land in.
     readonly property var categoryNav: [
         { title: "Apps",    icon: "󰀻", category: "Browse", isCategory: true, target: "App",     keywords: "apps applications launcher programs software desktop" },
+        { title: "Files",   icon: "", category: "Browse", isCategory: true, target: root.fileCategory, keywords: "files file search find folder browse path open image picture document text fd" },
         { title: "Style",   icon: "",  category: "Browse", isCategory: true, target: "Style",   keywords: "style theme appearance look font background corners waybar screensaver" },
         { title: "Setup",   icon: "",  category: "Browse", isCategory: true, target: "Setup",   keywords: "setup config audio wifi bluetooth power monitors keybindings defaults dns security" },
         { title: "Install", icon: "󰉉", category: "Browse", isCategory: true, target: "Install", keywords: "install add package aur webapp tui service style dev editor terminal browser ai gaming" },
@@ -450,6 +504,148 @@ ShellRoot {
         root.close();
     }
 
+    // ---------- File search (fd) ----------
+    // fd does the heavy lifting: smart-case substring/regex matching,
+    // .gitignore + global-ignore awareness, hidden-file skip. We layer on
+    // an explicit exclude list for build dirs that aren't always
+    // gitignored, scope it to $HOME, and cap results so the list stays
+    // snappy on noisy queries.
+    function basename(p) {
+        const s = p.lastIndexOf("/");
+        return s >= 0 ? p.substring(s + 1) : p;
+    }
+    function dirname(p) {
+        const s = p.lastIndexOf("/");
+        return s >= 0 ? p.substring(0, s) : "";
+    }
+    function tildify(p) {
+        return (p.indexOf(root.homeDir) === 0)
+            ? "~" + p.substring(root.homeDir.length)
+            : p;
+    }
+
+    function buildFdArgs(tokens) {
+        const args = ["--type", "f", "--max-results", "200"];
+        const excludes = root.fdExcludes;
+        for (let i = 0; i < excludes.length; i++) {
+            args.push("--exclude");
+            args.push(excludes[i]);
+        }
+        // Join tokens with `.*` for fzf-style gap matching: "img wall"
+        // -> "img.*wall" finds "img-wallpaper.png".
+        args.push(tokens.join(".*"));
+        args.push(root.homeDir);
+        return args;
+    }
+
+    Process {
+        id: fdProc
+        running: false
+        command: ["fd"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = this.text.split("\n").filter(s => s.length > 0);
+                const out = new Array(lines.length);
+                for (let i = 0; i < lines.length; i++) {
+                    const path = lines[i];
+                    const dirShort = root.tildify(root.dirname(path));
+                    out[i] = {
+                        title: root.basename(path),
+                        comment: dirShort,
+                        keywords: "",
+                        category: dirShort,
+                        icon: "",
+                        path: path,
+                        exec: "xdg-open " + JSON.stringify(path),
+                        isFile: true
+                    };
+                }
+                root.fileItems = out;
+                root.selectedIndex = Math.max(0, Math.min(root.selectedIndex,
+                                                          out.length - 1));
+                root.updatePreview();
+            }
+        }
+    }
+
+    Timer {
+        id: fdDebounce
+        interval: 120
+        repeat: false
+        onTriggered: {
+            const tokens = root.queryTokens;
+            if (!root.fileMode || tokens.length === 0) {
+                root.fileItems = [];
+                root.updatePreview();
+                return;
+            }
+            fdProc.command = ["fd"].concat(root.buildFdArgs(tokens));
+            fdProc.running = false;
+            fdProc.running = true;
+        }
+    }
+
+    // Two Processes so text and metadata sinks can be staged without
+    // racing on a shared body property. Each is restarted via running
+    // false→true on selection change.
+    Process {
+        id: textPreviewProc
+        running: false
+        command: ["true"]
+        stdout: StdioCollector {
+            onStreamFinished: { root.previewText = this.text; }
+        }
+    }
+    Process {
+        id: metaPreviewProc
+        running: false
+        command: ["true"]
+        stdout: StdioCollector {
+            onStreamFinished: { root.previewMeta = this.text; }
+        }
+    }
+
+    function fileExt(path) {
+        const name = root.basename(path);
+        const dot = name.lastIndexOf(".");
+        if (dot <= 0) return name.toLowerCase(); // dotless name (Makefile)
+        return name.substring(dot + 1).toLowerCase();
+    }
+
+    function updatePreview() {
+        const it = root.fileMode ? root.filteredItems[root.selectedIndex] : null;
+        const path = (it && it.path) || "";
+        if (path === root.previewPath) return;
+        root.previewPath = path;
+        root.previewText = "";
+        root.previewMeta = "";
+        if (!path) return;
+        const kind = root.previewKind;
+        if (kind === "text") {
+            root.previewText = "Loading…";
+            textPreviewProc.command = ["head", "-c", "8192", path];
+            textPreviewProc.running = false;
+            textPreviewProc.running = true;
+        } else if (kind === "meta") {
+            root.previewMeta = "Loading…";
+            // Positional $1 keeps the path argv-safe; embedding it in the
+            // -c script would let `$`/backticks in filenames expand.
+            metaPreviewProc.command = ["sh", "-c",
+                "stat -c 'SIZE   %s bytes\nMTIME  %y' \"$1\" 2>/dev/null; "
+                + "printf 'MIME   '; file -b --mime-type \"$1\" 2>/dev/null",
+                "sh", path];
+            metaPreviewProc.running = false;
+            metaPreviewProc.running = true;
+        }
+    }
+
+    onQueryChanged: {
+        if (root.fileMode) fdDebounce.restart();
+    }
+    onSelectedIndexChanged: {
+        if (root.fileMode) root.updatePreview();
+    }
+
     // ---------- Search ----------
     // Each query token must match somewhere in the item for the item to
     // qualify; scores stack so "thm dark" finds Theme even though neither
@@ -480,6 +676,10 @@ ShellRoot {
     }
 
     readonly property var filteredItems: {
+        // File mode is its own world: fd already did the filtering, so we
+        // just pass its results through. No scoring, no nav-row stitching.
+        if (root.fileMode) return root.fileItems;
+
         const tokens = root.queryTokens;
         const filter = root.categoryFilter;
         const cap = root.maxResults;
@@ -584,7 +784,13 @@ ShellRoot {
             // Card sits slightly above visual centre so the result list grows
             // downward without dragging the search field out of the eyeline.
             y: parent.height * 0.18
-            width: 640
+            // Wide enough in file mode for a ~520px preview pane next to
+            // the ~440px result list; narrow back to 640 at root so apps/
+            // omarchy mode keeps its compact feel.
+            width: root.fileMode ? 1000 : 640
+            Behavior on width {
+                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+            }
             // Cap the card so it never exceeds the screen even on small
             // displays; cardCol implicitHeight covers the search + list +
             // footer block.
@@ -684,6 +890,14 @@ ShellRoot {
                         Text {
                             text: {
                                 if (!root.appsLoaded) return "LOADING APPS…";
+                                if (root.fileMode) {
+                                    if (root.query.length === 0) return "TYPE TO SEARCH ~";
+                                    if (root.fdRunning) return "SEARCHING…";
+                                    const total = root.filteredItems.length;
+                                    return total === 0
+                                        ? "NO FILES MATCH"
+                                        : total + " FILE" + (total === 1 ? "" : "S");
+                                }
                                 const total = root.filteredItems.length;
                                 if (root.query.length === 0) {
                                     return total + " ENTRIES  ·  " + root.allItems.length + " TOTAL";
@@ -704,7 +918,7 @@ ShellRoot {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.categoryFilter === ""
                               ? "↑↓ / TAB  ·  ↵ OPEN  ·  ESC CLOSE"
-                              : "↑↓ / TAB  ·  ↵ RUN  ·  ESC BACK"
+                              : "↑↓ / TAB  ·  ↵ " + (root.fileMode ? "OPEN FILE" : "RUN") + "  ·  ESC BACK"
                         color: root.sumi
                         font.family: root.mono
                         font.pixelSize: 10
@@ -737,7 +951,9 @@ ShellRoot {
                         anchors.leftMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.query.length === 0
-                              ? "Type to search apps, themes, settings…"
+                              ? (root.fileMode
+                                 ? "Type to search files in ~ …"
+                                 : "Type to search apps, themes, settings…")
                               : root.query
                         color: root.query.length === 0 ? root.sumi : root.ink
                         opacity: root.query.length === 0 ? 0.5 : 1.0
@@ -773,13 +989,27 @@ ShellRoot {
                 // clip prevents the bottom row bleeding into the footer
                 // hairline mid-scroll.
                 Item {
+                    id: listArea
                     width: parent.width
                     height: Math.max(60, card.height - 34 - 43 - 34 - 22 - 12 * 5)
                     clip: true
 
+                    // In file mode the list shrinks to ~44% of the card so
+                    // a 520px-ish preview pane fits alongside it. The 1px
+                    // hairline + 1px inverse hairline divider sits between
+                    // them. animated alongside card.width for a single
+                    // smooth widen-and-split motion.
+                    readonly property real listFraction: root.fileMode ? 0.44 : 1.0
+
                     ListView {
                         id: resultList
-                        anchors.fill: parent
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        // Follows card.width's Behavior animation — adding a
+                        // second Behavior here would animate to a moving
+                        // target and produce staggered motion.
+                        width: parent.width * listArea.listFraction
                         model: root.filteredItems
                         currentIndex: root.selectedIndex
                         highlightFollowsCurrentItem: false
@@ -874,8 +1104,8 @@ ShellRoot {
                                 anchors.left: iconText.right
                                 anchors.leftMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
-                                // Trailing chevron flags category-nav rows
-                                // so you can tell at a glance which Enters
+                                // Trailing chevron flags drill-in rows so
+                                // you can tell at a glance which Enters
                                 // drill in vs. which Enters execute.
                                 text: row.modelData.isCategory
                                       ? row.modelData.title + "  ›"
@@ -893,12 +1123,23 @@ ShellRoot {
                                 anchors.right: parent.right
                                 anchors.rightMargin: 14
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: (row.modelData.category || "").toUpperCase()
+                                // File rows show the dirname here, which
+                                // shouldn't be uppercased or letter-spaced.
+                                // Cap the width so a deep path doesn't push
+                                // the title text off the row.
+                                text: row.modelData.isFile
+                                      ? (row.modelData.category || "")
+                                      : (row.modelData.category || "").toUpperCase()
                                 color: row.isSelected ? root.seal : root.sumi
                                 opacity: row.isSelected ? 0.95 : 0.65
                                 font.family: root.mono
                                 font.pixelSize: 10
-                                font.letterSpacing: 2
+                                font.letterSpacing: row.modelData.isFile ? 0 : 2
+                                elide: Text.ElideLeft
+                                horizontalAlignment: Text.AlignRight
+                                width: row.modelData.isFile
+                                       ? Math.min(implicitWidth, row.width * 0.45)
+                                       : implicitWidth
                             }
 
                             MouseArea {
@@ -919,12 +1160,152 @@ ShellRoot {
                         Text {
                             anchors.centerIn: parent
                             visible: resultList.count === 0
-                            text: root.appsLoaded ? "NOTHING MATCHES" : "INDEXING APPS…"
+                            text: {
+                                if (root.fileMode) {
+                                    if (root.query.length === 0) return "TYPE TO SEARCH ~";
+                                    if (root.fdRunning) return "SEARCHING…";
+                                    return "NO FILES MATCH";
+                                }
+                                return root.appsLoaded ? "NOTHING MATCHES" : "INDEXING APPS…";
+                            }
                             color: root.sumi
                             font.family: root.mono
                             font.pixelSize: 11
                             font.letterSpacing: 3
                             opacity: 0.6
+                        }
+                    }
+
+                    // ---------- Preview pane ----------
+                    // Vertical hairline separating the list from the
+                    // preview. Hidden at root, fades in via the
+                    // listFraction-driven layout when file mode flips on.
+                    Rectangle {
+                        visible: root.fileMode
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.left: resultList.right
+                        width: 1
+                        color: root.sep
+                    }
+
+                    Item {
+                        id: previewPane
+                        visible: root.fileMode
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.left: resultList.right
+                        anchors.leftMargin: 13
+                        anchors.right: parent.right
+
+                        // Wraps so a long filename doesn't elide into
+                        // uselessness; capped at 2 lines for body room.
+                        Text {
+                            id: previewName
+                            anchors.top: parent.top
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            text: root.previewPath ? root.basename(root.previewPath) : ""
+                            color: root.ink
+                            font.family: root.mono
+                            font.pixelSize: 13
+                            font.weight: Font.Medium
+                            font.letterSpacing: 1
+                            wrapMode: Text.WrapAnywhere
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            id: previewDir
+                            anchors.top: previewName.bottom
+                            anchors.topMargin: 2
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            text: root.previewPath
+                                  ? root.tildify(root.dirname(root.previewPath))
+                                  : ""
+                            color: root.sumi
+                            font.family: root.mono
+                            font.pixelSize: 10
+                            font.letterSpacing: 1
+                            elide: Text.ElideLeft
+                            opacity: 0.75
+                        }
+                        Rectangle {
+                            id: previewSep
+                            anchors.top: previewDir.bottom
+                            anchors.topMargin: 8
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            height: 1
+                            color: root.sep
+                            visible: root.previewPath !== ""
+                        }
+
+                        Item {
+                            id: previewBody
+                            anchors.top: previewSep.bottom
+                            anchors.topMargin: 10
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            clip: true
+
+                            Text {
+                                anchors.centerIn: parent
+                                visible: root.previewPath === ""
+                                text: root.query.length === 0
+                                      ? "PREVIEW APPEARS HERE"
+                                      : "SELECT A FILE"
+                                color: root.sumi
+                                font.family: root.mono
+                                font.pixelSize: 10
+                                font.letterSpacing: 3
+                                opacity: 0.5
+                            }
+
+                            // sourceSize caps decode memory so a 6000x4000
+                            // photo doesn't allocate its full pixel buffer
+                            // just to render at ~500px.
+                            Image {
+                                anchors.fill: parent
+                                anchors.margins: 4
+                                visible: root.previewKind === "image"
+                                source: root.previewKind === "image"
+                                        ? "file://" + root.previewPath
+                                        : ""
+                                sourceSize.width: 1024
+                                sourceSize.height: 1024
+                                fillMode: Image.PreserveAspectFit
+                                asynchronous: true
+                                smooth: true
+                            }
+
+                            Text {
+                                anchors.fill: parent
+                                visible: root.previewKind === "text"
+                                text: root.previewText
+                                color: root.ink
+                                font.family: root.mono
+                                font.pixelSize: 10
+                                lineHeight: 1.3
+                                wrapMode: Text.Wrap
+                                textFormat: Text.PlainText
+                                elide: Text.ElideRight
+                                maximumLineCount: Math.max(1, Math.floor(previewBody.height / 13))
+                            }
+
+                            Text {
+                                anchors.fill: parent
+                                visible: root.previewKind === "meta"
+                                text: root.previewMeta
+                                color: root.sumi
+                                font.family: root.mono
+                                font.pixelSize: 11
+                                lineHeight: 1.4
+                                wrapMode: Text.WordWrap
+                                textFormat: Text.PlainText
+                            }
                         }
                     }
                 }
