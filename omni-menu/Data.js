@@ -1,8 +1,10 @@
 .pragma library
 
-// Sentinel values for the search drills.
+// Sentinel values for the search/state drills.
 const fileCategory = "Files";
 const ghCategory = "GitHub";
+const favCategory = "Favourites";
+const histCategory = "History";
 
 // fd already respects .gitignore, the global ignore file, and skips
 // hidden files by default. These excludes catch build dirs that
@@ -64,6 +66,8 @@ const categoryNav = [
     { title: "Apps",    icon: "󰀻", category: "Browse", isCategory: true, target: "App",         keywords: "apps applications launcher programs software desktop" },
     { title: "Files",   icon: "󰉋", category: "Browse", isCategory: true, target: fileCategory,  keywords: "files file search find folder browse path open image picture document text fd" },
     { title: "GitHub",  icon: "󰊤", category: "Browse", isCategory: true, target: ghCategory,    keywords: "github gh repo repository search code clone star issue pull request pr open source git" },
+    { title: "Favourites", icon: "󰓎", category: "Browse", isCategory: true, target: favCategory,  keywords: "favourites favorites favs starred pinned bookmarks marked" },
+    { title: "History", icon: "󰋚", category: "Browse", isCategory: true, target: histCategory,    keywords: "history recent recents log past activity used opened" },
     { title: "Style",   icon: "󰏘", category: "Browse", isCategory: true, target: "Style",       keywords: "style theme appearance look font background corners waybar screensaver" },
     { title: "Setup",   icon: "󰒓", category: "Browse", isCategory: true, target: "Setup",       keywords: "setup config audio wifi bluetooth power monitors keybindings defaults dns security" },
     { title: "Install", icon: "󰏗", category: "Browse", isCategory: true, target: "Install",     keywords: "install add package aur webapp tui service style dev editor terminal browser ai gaming" },

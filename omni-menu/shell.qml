@@ -75,7 +75,11 @@ ShellRoot {
     // filteredItems pivots to the matching results array, and goUp/Esc
     // unwind via the same path as any other category.
     readonly property bool fileMode: root.categoryFilter === Data.fileCategory
-    readonly property bool ghMode: root.categoryFilter === Data.ghCategory
+    readonly property bool ghMode:   root.categoryFilter === Data.ghCategory
+    readonly property bool favMode:  root.categoryFilter === Data.favCategory
+    readonly property bool histMode: root.categoryFilter === Data.histCategory
+
+    Bookmarks { id: bookmarks }
 
     // gh CLI-backed repo search + README preview.
     GhSearch {
@@ -190,6 +194,7 @@ ShellRoot {
             root.selectedIndex = 0;
             return;
         }
+        bookmarks.record(item);
         // TUI commands need a real terminal — fzf, sudo prompts, and bash
         // `read` fail when launched detached. `item.tui` holds the wrapper
         // command name (omarchy-launch-tui or omarchy-launch-floating-…).
@@ -255,9 +260,13 @@ ShellRoot {
         const filter = root.categoryFilter;
         const cap = root.maxResults;
 
-        const pool = filter !== ""
-            ? root.allItems.filter(it => it.category === filter)
-            : root.navRows.concat(root.allItems);
+        // Favourites/history drill-ins draw from Bookmarks; scoring
+        // still applies so typing inside the drill filters live.
+        let pool;
+        if (root.favMode)       pool = bookmarks.favouriteItems;
+        else if (root.histMode) pool = bookmarks.historyItems;
+        else if (filter !== "") pool = root.allItems.filter(it => it.category === filter);
+        else                    pool = root.navRows.concat(root.allItems);
 
         // Empty query: preserve insertion order (nav rows first, then
         // omarchy actions, then apps). No scoring, no allocation overhead.
@@ -431,6 +440,10 @@ ShellRoot {
                     if (root.query.length > 0) root.query = root.query.slice(0, -1);
                     else root.goUp();
                     event.accepted = true;
+                } else if (event.key === Qt.Key_S && (event.modifiers & Qt.ControlModifier)) {
+                    const it = root.filteredItems[root.selectedIndex];
+                    if (it && !it.isCategory) bookmarks.toggleFavourite(it);
+                    event.accepted = true;
                 } else if (event.text && event.text.length === 1) {
                     const ch = event.text;
                     // Printable range; lets letters, digits, and spaces in,
@@ -492,6 +505,18 @@ ShellRoot {
                                         ? "NO REPOS MATCH"
                                         : total + " REPO" + (total === 1 ? "" : "S");
                                 }
+                                if (root.favMode) {
+                                    const total = root.filteredItems.length;
+                                    return total === 0
+                                        ? "NO FAVOURITES YET  ·  CTRL+S TO STAR"
+                                        : total + " FAVOURITE" + (total === 1 ? "" : "S");
+                                }
+                                if (root.histMode) {
+                                    const total = root.filteredItems.length;
+                                    return total === 0
+                                        ? "NO HISTORY YET"
+                                        : total + " RECENT" + (total === 1 ? "" : "S");
+                                }
                                 const total = root.filteredItems.length;
                                 if (root.query.length === 0) {
                                     return total + " ENTRIES  ·  " + root.allItems.length + " TOTAL";
@@ -511,8 +536,8 @@ ShellRoot {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.categoryFilter === ""
-                              ? "↑↓ / TAB  ·  ↵ OPEN  ·  ESC CLOSE"
-                              : "↑↓ / TAB  ·  ↵ " + (root.fileMode ? "OPEN FILE" : (root.ghMode ? "OPEN" : "RUN")) + "  ·  ESC BACK"
+                              ? "↑↓ / TAB  ·  ↵ OPEN  ·  ^S STAR  ·  ESC CLOSE"
+                              : "↑↓ / TAB  ·  ↵ " + (root.fileMode ? "OPEN FILE" : (root.ghMode ? "OPEN" : "RUN")) + "  ·  ^S STAR  ·  ESC BACK"
                         color: root.sumi
                         font.family: root.mono
                         font.pixelSize: 10
@@ -715,6 +740,17 @@ ShellRoot {
                                 width: row.width - iconText.width - catText.implicitWidth - 60
                             }
                             Text {
+                                id: starText
+                                anchors.right: catText.left
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: bookmarks.isFavourite(row.modelData)
+                                text: "󰓎"
+                                color: root.seal
+                                font.family: root.mono
+                                font.pixelSize: 11
+                            }
+                            Text {
                                 id: catText
                                 anchors.right: parent.right
                                 anchors.rightMargin: 14
@@ -769,6 +805,8 @@ ShellRoot {
                                     if (root.ghRunning) return "SEARCHING GITHUB…";
                                     return "NO REPOS MATCH";
                                 }
+                                if (root.favMode)  return "NO FAVOURITES — CTRL+S TO STAR";
+                                if (root.histMode) return "NO HISTORY YET";
                                 return root.appsLoaded ? "NOTHING MATCHES" : "INDEXING APPS…";
                             }
                             color: root.sumi
