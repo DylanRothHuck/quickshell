@@ -1435,4 +1435,15 @@ ShellRoot {
         function reset(): void { root.resetDisplay(); }
         function blank(): void { root.blankScreen(); }
     }
+
+    // bind = SUPER, C, exec, qs ipc call calendar toggle
+    IpcHandler {
+        target: "calendar"
+        function toggle(): void {
+            if (root.calendarVisible) root.calendarVisible = false;
+            else root.openCalendar();
+        }
+        function open(): void  { root.openCalendar(); }
+        function close(): void { root.calendarVisible = false; }
+    }
 }

@@ -2,24 +2,23 @@ import QtQuick
 import Quickshell.Io
 import "Data.js" as Data
 
-// Probes the navbar shell's IPC surface at startup and exposes the
-// widgets it owns as omni-menu items. Each item executes
-// `qs -c navbar ipc call <target> open` to pop the corresponding panel.
-//
-// If navbar isn't running, or doesn't register a given target, that
-// item is simply omitted — no error, no placeholder row.
+// Probes navbar's IPC surface and exposes one item per registered
+// widget target. Probe re-runs on demand via probe() so widgets
+// toggled at runtime don't show up stale.
 Item {
     id: navbarApps
 
-    // Per-target metadata. `category` slots each one into an existing
-    // omarchy category so it shows up where the user would already
-    // look: weather/display under Toggle, screenshots/videos under
-    // Capture (next to the take-a-screenshot row).
+    // `category` slots each widget into an existing omarchy category so
+    // it shows up where the user would already look: weather/display/
+    // calendar under Toggle, screenshots/videos under Capture (next to
+    // the take-a-screenshot row).
     readonly property var candidates: [
         { target: "weather",     title: "Toggle Weather",     icon: "󰖐", category: "Toggle",
           keywords: "weather forecast temperature rain sun wind cloud wttr" },
         { target: "display",     title: "Toggle Display",     icon: "󰍹", category: "Toggle",
           keywords: "display brightness warmth gamma night light monitor screen panel" },
+        { target: "calendar",    title: "Toggle Calendar",    icon: "󰃭", category: "Toggle",
+          keywords: "calendar date month day year week schedule planner today" },
         { target: "screenshots", title: "Browse Screenshots", icon: "󰄀", category: "Capture",
           keywords: "screenshots browse view gallery thumbnails recent" },
         { target: "videos",      title: "Browse Videos",      icon: "󰕧", category: "Capture",
@@ -28,17 +27,19 @@ Item {
 
     property var items: []
 
+    function probe() {
+        probeProc.running = false;
+        probeProc.running = true;
+    }
+
     Process {
-        id: probe
+        id: probeProc
         running: false
-        // Lists every IpcHandler on the navbar shell. Output looks like
-        // `target weather\n  function open(): void\n  ...`.
         command: ["sh", "-c", "qs -c navbar ipc show 2>/dev/null || true"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const text = this.text || "";
                 const available = {};
-                const lines = text.split("\n");
+                const lines = (this.text || "").split("\n");
                 for (let i = 0; i < lines.length; i++) {
                     const m = lines[i].match(/^target (\S+)/);
                     if (m) available[m[1]] = true;
@@ -60,5 +61,5 @@ Item {
         }
     }
 
-    Component.onCompleted: probe.running = true
+    Component.onCompleted: navbarApps.probe()
 }

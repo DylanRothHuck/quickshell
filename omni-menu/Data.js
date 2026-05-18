@@ -279,3 +279,10 @@ function formatStars(n) {
     if (n >= 1000)    return (n / 1000).toFixed(1) + "k";
     return "" + n;
 }
+
+// Stable identity per item — path wins (files, repos, PRs), exec next
+// (apps, omarchy actions), title+category last (synthetic rows).
+function itemKey(item) {
+    if (!item) return "";
+    return item.path || item.exec || (item.title + "|" + item.category);
+}

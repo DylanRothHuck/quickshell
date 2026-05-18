@@ -129,6 +129,7 @@ ShellRoot {
         root.selectedIndex = 0;
         root.categoryFilter = "";
         root.visible_ = true;
+        navbarApps.probe();
     }
     function close() { root.visible_ = false; }
     function toggle() { if (root.visible_) close(); else open(); }
