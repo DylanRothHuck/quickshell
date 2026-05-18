@@ -58,6 +58,7 @@ ShellRoot {
     // navbar-less setup see nothing instead of broken rows).
     AppScan { id: appScan }
     NavbarApps { id: navbarApps }
+    Tuis { id: tuis }
     readonly property alias appsLoaded: appScan.loaded
 
     // ---------- Visibility / state ----------
@@ -172,7 +173,7 @@ ShellRoot {
     // 200+ entry array on unrelated property touches.
     property var omarchy: []
     property var nav: []
-    readonly property var allItems: root.omarchy.concat(appScan.apps).concat(navbarApps.items)
+    readonly property var allItems: root.omarchy.concat(appScan.apps).concat(navbarApps.items).concat(tuis.items)
 
     // ---------- Launcher ----------
     // Matches omarchy's launch convention (see omarchy-launch-or-focus):
