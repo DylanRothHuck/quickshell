@@ -369,6 +369,21 @@ PanelWindow {
                 onRightActivated: bar.root.run("pamixer -t")
             }
 
+            // Surfaces only when omarchy-update-available exits 0. Sits
+            // beside the battery so it shares the system-status cluster's
+            // line of sight without disturbing the existing icon cadence.
+            Module {
+                root: bar.root
+                visible: bar.root.omarchyUpdateAvailable
+                glyph: bar.root.icoUpdate
+                tooltip: bar.root.omarchyLatestTag
+                         ? "Omarchy update available · " + bar.root.omarchyLatestTag
+                         : "Omarchy update available"
+                color: bar.root.seal
+                fontSize: 10
+                onActivated: bar.root.openOmarchyUpdate()
+            }
+
             Module {
                 root: bar.root
                 glyph: bar.root.batteryIcon()

@@ -76,6 +76,7 @@ ShellRoot {
     readonly property string icoAether:  String.fromCodePoint(0xf03d8)
     readonly property string icoFilm:    String.fromCodePoint(0xf0231)
     readonly property string icoSearch:  String.fromCodePoint(0xf0349)
+    readonly property string icoUpdate:  String.fromCodePoint(0xf021)
 
     readonly property int barHeight: 26
 
@@ -142,6 +143,21 @@ ShellRoot {
     property string audioIcon: ""
     property int    audioVol: 0
     property bool   audioMuted: false
+
+    // omarchy-update-available exits 0 when the local omarchy clone is
+    // behind the latest tag. The bar surfaces a small refresh glyph next
+    // to the battery for as long as that's the case; click → launch the
+    // floating update terminal.
+    property bool   omarchyUpdateAvailable: false
+    property string omarchyLatestTag: ""
+
+    function openOmarchyUpdate() {
+        root.run("omarchy-launch-floating-terminal-with-presentation omarchy-update");
+    }
+    function refreshOmarchyUpdateCheck() {
+        omarchyUpdateProbe.running = false;
+        omarchyUpdateProbe.running = true;
+    }
 
     property string hh: "--"
     property string mm: "--"
@@ -1116,6 +1132,30 @@ ShellRoot {
     }
     Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: { audioProbe.running = false; audioProbe.running = true; } }
+
+    // ---------- Omarchy update probe ----------
+    // Mirrors waybar's custom/update: omarchy-update-available exits 0 and
+    // prints "Omarchy update available (<tag>)" when behind, exits non-zero
+    // otherwise. Network-bound (ls-remote), so the cadence matches waybar
+    // at 6h; refreshOmarchyUpdateCheck() retriggers on demand.
+    Process {
+        id: omarchyUpdateProbe
+        running: false
+        command: ["omarchy-update-available"]
+        stdout: StdioCollector { id: omarchyUpdateOut }
+        onExited: (code, status) => {
+            if (code === 0) {
+                const m = omarchyUpdateOut.text.match(/\(([^)]+)\)/);
+                root.omarchyLatestTag = m ? m[1] : "";
+                root.omarchyUpdateAvailable = true;
+            } else {
+                root.omarchyUpdateAvailable = false;
+                root.omarchyLatestTag = "";
+            }
+        }
+    }
+    Timer { interval: 21600000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: root.refreshOmarchyUpdateCheck() }
 
     // ---------- Screenshots list probe ----------
     // Cap at 60 entries (~5 pages) so a screenshot-heavy ~/Pictures
