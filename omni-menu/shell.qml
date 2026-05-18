@@ -71,6 +71,12 @@ ShellRoot {
     readonly property string fileCategory: "Files"
     readonly property bool fileMode: root.categoryFilter === root.fileCategory
 
+    readonly property string ghCategory: "GitHub"
+    readonly property bool ghMode: root.categoryFilter === root.ghCategory
+    property bool ghReady: false
+    property var ghItems: []
+    readonly property bool ghRunning: ghProc.running
+
     readonly property string sectionIcon: {
         if (root.categoryFilter === "") return "";
         for (let i = 0; i < root.categoryNav.length; i++) {
@@ -180,7 +186,9 @@ ShellRoot {
         root.previewPath = "";
         root.previewText = "";
         root.previewMeta = "";
+        root.ghItems = [];
         fdDebounce.stop();
+        ghDebounce.stop();
     }
 
     // ---------- Palette loader ----------
@@ -469,6 +477,7 @@ ShellRoot {
     readonly property var categoryNav: [
         { title: "Apps",    icon: "󰀻", category: "Browse", isCategory: true, target: "App",     keywords: "apps applications launcher programs software desktop" },
         { title: "Files",   icon: "󰉋", category: "Browse", isCategory: true, target: root.fileCategory, keywords: "files file search find folder browse path open image picture document text fd" },
+        { title: "GitHub",  icon: "󰊤", category: "Browse", isCategory: true, target: root.ghCategory,   keywords: "github gh repo repository search code clone star issue pull request pr open source git" },
         { title: "Style",   icon: "󰏘", category: "Browse", isCategory: true, target: "Style",   keywords: "style theme appearance look font background corners waybar screensaver" },
         { title: "Setup",   icon: "󰒓", category: "Browse", isCategory: true, target: "Setup",   keywords: "setup config audio wifi bluetooth power monitors keybindings defaults dns security" },
         { title: "Install", icon: "󰏗", category: "Browse", isCategory: true, target: "Install", keywords: "install add package aur webapp tui service style dev editor terminal browser ai gaming" },
@@ -634,6 +643,76 @@ ShellRoot {
         }
     }
 
+    // ---------- GitHub search (gh) ----------
+    // gh's auth check is the only reliable way to tell if a token is
+    // present and usable. The "Logged in" string is stable across
+    // recent gh versions and works whether keyring or env-var-backed.
+    Process {
+        id: ghAuthProc
+        running: false
+        command: ["sh", "-c", "command -v gh >/dev/null 2>&1 && gh auth status 2>&1 || true"]
+        stdout: StdioCollector {
+            onStreamFinished: { root.ghReady = this.text.indexOf("Logged in") >= 0; }
+        }
+    }
+
+    // 350ms debounce — slower than fd's 120ms because each keystroke
+    // costs an HTTP round-trip to the GitHub search API, and the
+    // rate-limit budget is per-token, not per-process.
+    Timer {
+        id: ghDebounce
+        interval: 350
+        repeat: false
+        onTriggered: {
+            const q = root.query.trim();
+            if (!root.ghMode || q.length === 0) {
+                root.ghItems = [];
+                return;
+            }
+            ghProc.command = ["gh", "search", "repos", q,
+                              "--json", "fullName,description,url,stargazersCount,language",
+                              "--limit", "25"];
+            ghProc.running = false;
+            ghProc.running = true;
+        }
+    }
+
+    function formatStars(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + "m";
+        if (n >= 1000)    return (n / 1000).toFixed(1) + "k";
+        return "" + n;
+    }
+
+    Process {
+        id: ghProc
+        running: false
+        command: ["gh"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                let arr = [];
+                try { arr = JSON.parse(this.text || "[]"); } catch (_) { arr = []; }
+                const out = new Array(arr.length);
+                for (let i = 0; i < arr.length; i++) {
+                    const r = arr[i];
+                    const lang = r.language ? "  ·  " + r.language : "";
+                    out[i] = {
+                        title: r.fullName,
+                        comment: r.description || "",
+                        keywords: "",
+                        category: "★ " + root.formatStars(r.stargazersCount || 0) + lang,
+                        icon: "󰊤",
+                        path: r.url,
+                        exec: "xdg-open " + JSON.stringify(r.url),
+                        isFile: true
+                    };
+                }
+                root.ghItems = out;
+                root.selectedIndex = Math.max(0, Math.min(root.selectedIndex,
+                                                          out.length - 1));
+            }
+        }
+    }
+
     // Two Processes so text and metadata sinks can be staged without
     // racing on a shared body property. Each is restarted via running
     // false→true on selection change.
@@ -690,6 +769,7 @@ ShellRoot {
 
     onQueryChanged: {
         if (root.fileMode) fdDebounce.restart();
+        if (root.ghMode)   ghDebounce.restart();
     }
     onSelectedIndexChanged: {
         if (root.fileMode) root.updatePreview();
@@ -725,20 +805,23 @@ ShellRoot {
     }
 
     readonly property var filteredItems: {
-        // File mode is its own world: fd already did the filtering, so we
-        // just pass its results through. No scoring, no nav-row stitching.
+        // File and GitHub modes are their own worlds: fd and gh already
+        // did the filtering, so we just pass their results through.
         if (root.fileMode) return root.fileItems;
+        if (root.ghMode)   return root.ghItems;
 
         const tokens = root.queryTokens;
         const filter = root.categoryFilter;
         const cap = root.maxResults;
 
-        // Pool selection:
-        //   drilled (filter set) -> only items matching the target category
-        //   root                 -> navigators on top, then everything
+        // GitHub nav row only shown when gh CLI is installed + authed.
+        const navRows = root.ghReady
+            ? root.nav
+            : root.nav.filter(it => it.target !== root.ghCategory);
+
         const pool = filter !== ""
             ? root.allItems.filter(it => it.category === filter)
-            : root.nav.concat(root.allItems);
+            : navRows.concat(root.allItems);
 
         // Empty query: preserve insertion order (nav rows first, then
         // omarchy actions, then apps). No scoring, no allocation overhead.
@@ -791,6 +874,7 @@ ShellRoot {
         root.nav     = root.annotate(root.categoryNav);
         root.allItems = root.omarchy.slice();
         appScan.running = true;
+        ghAuthProc.running = true;
     }
 
     // ---------- IPC ----------
@@ -947,6 +1031,14 @@ ShellRoot {
                                         ? "NO FILES MATCH"
                                         : total + " FILE" + (total === 1 ? "" : "S");
                                 }
+                                if (root.ghMode) {
+                                    if (root.query.length === 0) return "TYPE TO SEARCH GITHUB";
+                                    if (root.ghRunning) return "SEARCHING GITHUB…";
+                                    const total = root.filteredItems.length;
+                                    return total === 0
+                                        ? "NO REPOS MATCH"
+                                        : total + " REPO" + (total === 1 ? "" : "S");
+                                }
                                 const total = root.filteredItems.length;
                                 if (root.query.length === 0) {
                                     return total + " ENTRIES  ·  " + root.allItems.length + " TOTAL";
@@ -988,8 +1080,9 @@ ShellRoot {
                         id: searchPrompt
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
-                        // Folder-search in file mode; magnifier elsewhere.
-                        text: root.fileMode ? "󰉖" : "󰍉"
+                        // Folder-search in file mode, github in gh mode,
+                        // magnifier everywhere else.
+                        text: root.fileMode ? "󰉖" : (root.ghMode ? "󰊤" : "󰍉")
                         color: root.seal
                         font.family: root.mono
                         font.pixelSize: 16
@@ -1215,6 +1308,11 @@ ShellRoot {
                                     if (root.query.length === 0) return "TYPE TO SEARCH ~";
                                     if (root.fdRunning) return "SEARCHING…";
                                     return "NO FILES MATCH";
+                                }
+                                if (root.ghMode) {
+                                    if (root.query.length === 0) return "TYPE TO SEARCH GITHUB";
+                                    if (root.ghRunning) return "SEARCHING GITHUB…";
+                                    return "NO REPOS MATCH";
                                 }
                                 return root.appsLoaded ? "NOTHING MATCHES" : "INDEXING APPS…";
                             }

@@ -124,10 +124,19 @@ ShellRoot {
     property int memVal: 0
     property int batVal: 0
     property string batState: "Unknown"
+    // Instantaneous power draw in watts; magnitude only — direction is in batState.
+    property real batPower: 0
 
     property string netIcon: "󰤯"
+    property string netKind: "none"   // "eth" | "wifi" | "none"
+    property string wifiSsid: ""
+    property int    wifiSignal: 0
     property string btIcon:  "󰂲"
+    property bool   btPowered: false
+    property int    btCount: 0
     property string audioIcon: ""
+    property int    audioVol: 0
+    property bool   audioMuted: false
 
     property string hh: "--"
     property string mm: "--"
@@ -295,6 +304,38 @@ ShellRoot {
     readonly property int videoPageCount: {
         if (root.videoFiles.length === 0) return 1;
         return Math.ceil(root.videoFiles.length / root.videosPerPage);
+    }
+
+    // ---------- Aether popup state ----------
+    // Lightweight quick-handle: a list of saved Aether blueprints with
+    // colour-swatch previews. Click applies via `aether --apply-blueprint`,
+    // so the heavy GUI only opens when explicitly requested.
+    property bool aetherVisible: false
+    property var  aetherBlueprints: []
+    property int  selectedAether: -1
+    property bool aetherLoading: false
+
+    function openAether() {
+        root.selectedAether = 0;
+        root.aetherLoading = true;
+        aetherProbe.running = false;
+        aetherProbe.running = true;
+        root.aetherVisible = true;
+    }
+
+    function moveAetherSelection(delta) {
+        const n = root.aetherBlueprints.length;
+        if (n === 0) return;
+        const next = root.selectedAether + delta;
+        if (next < 0) root.selectedAether = 0;
+        else if (next >= n) root.selectedAether = n - 1;
+        else root.selectedAether = next;
+    }
+
+    function applyAetherBlueprint(name) {
+        if (!name) return;
+        root.run("aether --apply-blueprint " + JSON.stringify(name));
+        root.aetherVisible = false;
     }
 
     // ---------- Calendar popup state ----------
@@ -812,27 +853,31 @@ ShellRoot {
             + "du=$(( (e+f+g) - (a+b+c) )); dt=$(( (e+f+g+h) - (a+b+c+d) )); "
             + "cpu=$(( dt>0 ? du*100/dt : 0 )); "
             + "mem=$(awk '/MemTotal/{t=$2}/MemAvailable/{m=$2}END{printf \"%d\",(t-m)*100/t}' /proc/meminfo); "
-            + "bat=0; bst=Unknown; "
+            + "bat=0; bst=Unknown; pwr=0; "
             + "if [ -d /sys/class/power_supply/BAT0 ]; then "
             + "  bat=$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo 0); "
             + "  bst=$(cat /sys/class/power_supply/BAT0/status 2>/dev/null || echo Unknown); "
+            + "  pwr=$(cat /sys/class/power_supply/BAT0/power_now 2>/dev/null || echo 0); "
             + "elif [ -d /sys/class/power_supply/BAT1 ]; then "
             + "  bat=$(cat /sys/class/power_supply/BAT1/capacity 2>/dev/null || echo 0); "
             + "  bst=$(cat /sys/class/power_supply/BAT1/status 2>/dev/null || echo Unknown); "
+            + "  pwr=$(cat /sys/class/power_supply/BAT1/power_now 2>/dev/null || echo 0); "
             + "fi; "
-            + "printf '%d|%d|%d|%s|%s|%s|%s|%s' "
+            + "pwr=${pwr#-}; "  // some kernels prefix '-' on discharge; magnitude is enough, sign comes from $bst
+            + "printf '%d|%d|%d|%s|%s|%s|%s|%s|%d' "
             + "  \"$cpu\" \"$mem\" \"$bat\" \"$bst\" "
-            + "  \"$(date +%H)\" \"$(date +%M)\" \"$(date +%d)\" \"$(date +%b | tr a-z A-Z)\""]
+            + "  \"$(date +%H)\" \"$(date +%M)\" \"$(date +%d)\" \"$(date +%b | tr a-z A-Z)\" \"$pwr\""]
         stdout: StdioCollector {
             onStreamFinished: {
                 const p = this.text.split("|");
-                if (p.length === 8) {
+                if (p.length === 9) {
                     root.cpuVal = parseInt(p[0]) || 0;
                     root.memVal = parseInt(p[1]) || 0;
                     root.batVal = parseInt(p[2]) || 0;
                     root.batState = p[3] || "Unknown";
                     root.hh = p[4]; root.mm = p[5];
                     root.dd = p[6]; root.mon = p[7];
+                    root.batPower = (parseInt(p[8]) || 0) / 1e6;
                 }
             }
         }
@@ -877,25 +922,39 @@ ShellRoot {
             + "if ip -o addr show | grep -qE '^[0-9]+: (en|eth)[^ ]*.*inet '; then type=eth; fi; "
             + "if [ \"$type\" = none ]; then "
             + "  for w in $(iw dev 2>/dev/null | awk '/Interface/{print $2}'); do "
-            + "    dbm=$(iw dev \"$w\" link 2>/dev/null | awk '/signal:/{print $2}'); "
+            + "    link=$(iw dev \"$w\" link 2>/dev/null); "
+            + "    dbm=$(printf '%s\\n' \"$link\" | awk '/signal:/{print $2}'); "
             + "    if [ -n \"$dbm\" ]; then "
             + "      pct=$((2 * (dbm + 100))); "
             + "      [ $pct -lt 0 ] && pct=0; "
             + "      [ $pct -gt 100 ] && pct=100; "
-            + "      type=wifi:$pct; break; "
+            + "      ssid=$(printf '%s\\n' \"$link\" | sed -n 's/^[[:space:]]*SSID: //p'); "
+            + "      type=\"wifi:$pct:$ssid\"; break; "
             + "    fi; "
             + "  done; "
             + "fi; printf '%s' \"$type\""]
         stdout: StdioCollector {
             onStreamFinished: {
                 const t = this.text.trim();
-                if (t === "eth") root.netIcon = "󰀂";
-                else if (t.startsWith("wifi:")) {
-                    const sig = parseInt(t.split(":")[1]) || 0;
+                if (t === "eth") {
+                    root.netIcon = "󰀂"; root.netKind = "eth";
+                    root.wifiSsid = ""; root.wifiSignal = 0;
+                } else if (t.startsWith("wifi:")) {
+                    // Split on the first two colons: signal pct, then SSID
+                    // (which may itself contain colons, so a naive split
+                    // would truncate networks like "Foo:Bar").
+                    const rest = t.slice(5);
+                    const c = rest.indexOf(":");
+                    const sig = parseInt(c < 0 ? rest : rest.slice(0, c)) || 0;
+                    const ssid = c < 0 ? "" : rest.slice(c + 1);
                     const ramp = ["󰤯","󰤟","󰤢","󰤥","󰤨"];
                     const idx = sig >= 80 ? 4 : sig >= 60 ? 3 : sig >= 40 ? 2 : sig >= 20 ? 1 : 0;
-                    root.netIcon = ramp[idx];
-                } else root.netIcon = "󰤮";
+                    root.netIcon = ramp[idx]; root.netKind = "wifi";
+                    root.wifiSignal = sig; root.wifiSsid = ssid;
+                } else {
+                    root.netIcon = "󰤮"; root.netKind = "none";
+                    root.wifiSsid = ""; root.wifiSignal = 0;
+                }
             }
         }
     }
@@ -970,14 +1029,17 @@ ShellRoot {
             "p=$(bluetoothctl show 2>/dev/null | grep -c 'Powered: yes' || echo 0); "
             + "c=$(bluetoothctl devices Connected 2>/dev/null | wc -l); "
             + "if [ \"$p\" = 0 ]; then echo off; "
-            + "elif [ \"$c\" -gt 0 ]; then echo on-conn; "
-            + "else echo on; fi"]
+            + "else echo \"on:$c\"; fi"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const s = this.text.trim();
-                if (s === "off") root.btIcon = "󰂲";
-                else if (s === "on-conn") root.btIcon = "󰂱";
-                else root.btIcon = root.icoBtOn;
+                if (s === "off") {
+                    root.btIcon = "󰂲"; root.btPowered = false; root.btCount = 0;
+                } else if (s.startsWith("on:")) {
+                    const n = parseInt(s.slice(3)) || 0;
+                    root.btPowered = true; root.btCount = n;
+                    root.btIcon = n > 0 ? "󰂱" : root.icoBtOn;
+                }
             }
         }
     }
@@ -999,6 +1061,8 @@ ShellRoot {
                 if (p.length !== 2) return;
                 const v = parseInt(p[0]);
                 const m = p[1].trim() === "true";
+                root.audioVol = isNaN(v) ? 0 : v;
+                root.audioMuted = m;
                 if (m) {
                     root.audioIcon = root.icoMute;
                 } else if (isNaN(v) || v <= 0) {
@@ -1131,6 +1195,28 @@ ShellRoot {
     }
 
     Process { id: vidCopier; running: false }
+
+    // Blueprint list for the Aether popup. `aether --list-blueprints --json`
+    // emits {blueprints: [{name, colors[16], lightMode, wallpaper, timestamp}]}.
+    // Sorted newest-first so freshly-saved themes surface at the top.
+    Process {
+        id: aetherProbe
+        running: false
+        command: ["aether", "--list-blueprints", "--json"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                let arr = [];
+                try {
+                    const obj = JSON.parse(this.text);
+                    arr = (obj.blueprints || []).slice();
+                } catch (_) { arr = []; }
+                arr.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+                root.aetherBlueprints = arr;
+                root.aetherLoading = false;
+                root.selectedAether = arr.length > 0 ? 0 : -1;
+            }
+        }
+    }
     // copiedVideo = which path is flashing on the grid; copiedVideoMode tells
     // the footer which payload landed (file URI vs raw bytes).
     property string copiedVideo: ""
@@ -1409,12 +1495,16 @@ ShellRoot {
                 }
 
                 Module {
-                    // Nerd Font mdi-palette (U+F03D8). Left-click launches
-                    // the Aether GUI; right-click regenerates the system
-                    // theme from a random local wallpaper via the CLI.
+                    // Nerd Font mdi-palette (U+F03D8). Left-click opens a
+                    // quick-handle popup (blueprint picker + GUI escape
+                    // hatch); right-click regenerates the system theme from
+                    // a random local wallpaper via the CLI.
                     glyph: root.icoAether
                     tooltip: "Aether"
-                    onActivated: root.run("aether")
+                    onActivated: {
+                        if (root.aetherVisible) root.aetherVisible = false;
+                        else root.openAether();
+                    }
                     onRightActivated: root.run("sh -c 'aether --generate \"$(aether --random-wallpaper)\"'")
                 }
 
@@ -1470,14 +1560,26 @@ ShellRoot {
 
                 Module {
                     glyph: root.btIcon
-                    tooltip: "Bluetooth"
+                    tooltip: {
+                        if (!root.btPowered) return "Bluetooth off";
+                        return root.btCount > 0
+                            ? "Bluetooth · " + root.btCount + " connected"
+                            : "Bluetooth on";
+                    }
                     onActivated: root.run("omarchy-launch-bluetooth")
                 }
 
                 Module {
                     id: netMod
                     glyph: root.netIcon
-                    tooltip: "Wi-Fi"
+                    tooltip: {
+                        if (root.netKind === "eth") return "Ethernet";
+                        if (root.netKind === "wifi") {
+                            const name = root.wifiSsid || "(hidden)";
+                            return "Wi-Fi · " + name + " · " + root.wifiSignal + "%";
+                        }
+                        return "Offline";
+                    }
                     onActivated: root.run("omarchy-launch-wifi")
 
                     // Network-burst dot: traverses the wifi glyph's outermost
@@ -1528,14 +1630,28 @@ ShellRoot {
 
                 Module {
                     glyph: root.audioIcon
-                    tooltip: "Audio"
+                    tooltip: root.audioMuted
+                             ? "Audio muted · " + root.audioVol + "%"
+                             : "Audio " + root.audioVol + "%"
                     onActivated: root.run("omarchy-launch-audio")
                     onRightActivated: root.run("pamixer -t")
                 }
 
                 Module {
                     glyph: root.batteryIcon()
-                    tooltip: "Battery " + root.batVal + "%"
+                    // Hide power below 0.05 W: idle Full / Not charging
+                    // states often report a sub-noise trickle that just
+                    // adds chatter to the tooltip.
+                    tooltip: {
+                        let s = "Battery " + root.batVal + "%";
+                        if (root.batPower >= 0.05) {
+                            const sign = root.batState === "Charging"    ? "+"
+                                       : root.batState === "Discharging" ? "-"
+                                       : "";
+                            s += "  " + sign + root.batPower.toFixed(1) + " W";
+                        }
+                        return s;
+                    }
                     color: root.batVal <= 10 ? root.seal : root.batVal <= 20 ? root.indigo : root.ink
                     onActivated: root.run("omarchy-menu power")
                 }
@@ -2601,6 +2717,248 @@ ShellRoot {
         }
     }
 
+    // ---------- Aether popup ----------
+    // Quick-handle picker: scrollable list of saved blueprints with their
+    // first 8 swatches and a light/dark glyph. Clicking a row applies it
+    // via the CLI; OPEN GUI and RANDOM REGEN chips cover the heavy actions
+    // so the popup remains the single left-click entry point.
+    PanelWindow {
+        id: aetherPopup
+        visible: root.aetherVisible || reveal > 0.001
+        color: "transparent"
+        anchors { top: true; bottom: true; left: true; right: true }
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.namespace: "omarchy-aether"
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+
+        property real reveal: root.aetherVisible ? 1 : 0
+        Behavior on reveal {
+            NumberAnimation {
+                duration: root.aetherVisible ? 220 : 140
+                easing.type: root.aetherVisible ? Easing.OutCubic : Easing.InCubic
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.aetherVisible = false
+        }
+
+        Rectangle {
+            id: aetherCard
+            anchors.centerIn: parent
+            width: 460
+            height: aeCol.implicitHeight + 34
+            color: root.bg
+            border.color: root.sep
+            border.width: 1
+            radius: 0
+
+            transformOrigin: Item.Center
+            scale: aetherPopup.reveal
+
+            focus: root.aetherVisible
+            Keys.onPressed: function(event) {
+                const k = event.key;
+                if (k === Qt.Key_Escape || k === Qt.Key_Q) {
+                    root.aetherVisible = false;
+                } else if (k === Qt.Key_Down || k === Qt.Key_J) {
+                    root.moveAetherSelection(1);
+                    aetherList.positionViewAtIndex(root.selectedAether, ListView.Contain);
+                } else if (k === Qt.Key_Up || k === Qt.Key_K) {
+                    root.moveAetherSelection(-1);
+                    aetherList.positionViewAtIndex(root.selectedAether, ListView.Contain);
+                } else if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space) {
+                    const e = root.aetherBlueprints[root.selectedAether];
+                    if (e) root.applyAetherBlueprint(e.name);
+                } else if (k === Qt.Key_G) {
+                    root.run("aether");
+                    root.aetherVisible = false;
+                } else if (k === Qt.Key_R) {
+                    root.run("sh -c 'aether --generate \"$(aether --random-wallpaper)\"'");
+                    root.aetherVisible = false;
+                } else {
+                    return;
+                }
+                event.accepted = true;
+            }
+
+            // Swallow clicks so the card body doesn't bubble to the
+            // outer dismiss MouseArea.
+            MouseArea { anchors.fill: parent }
+
+            Column {
+                id: aeCol
+                anchors.fill: parent
+                anchors.margins: 17
+                spacing: 12
+
+                Item {
+                    width: parent.width
+                    height: 43
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        Text {
+                            text: "AETHER"
+                            color: root.ink
+                            font.family: root.mono
+                            font.pixelSize: 19
+                            font.letterSpacing: 4
+                            font.weight: Font.Medium
+                        }
+                        Text {
+                            text: root.aetherLoading
+                                  ? "LOADING…"
+                                  : (root.aetherBlueprints.length === 0
+                                     ? "NO BLUEPRINTS"
+                                     : root.aetherBlueprints.length + " BLUEPRINTS")
+                            color: root.sumi
+                            font.family: root.mono
+                            font.pixelSize: 11
+                            font.letterSpacing: 2
+                        }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
+                ListView {
+                    id: aetherList
+                    width: parent.width
+                    height: 360
+                    clip: true
+                    model: root.aetherBlueprints
+                    spacing: 0
+                    currentIndex: root.selectedAether
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    delegate: Item {
+                        id: aeRow
+                        required property var modelData
+                        required property int index
+                        width: aetherList.width
+                        height: 34
+
+                        readonly property bool selected: root.selectedAether === aeRow.index
+
+                        Rectangle {
+                            anchors.fill: parent
+                            color: rowMouse.containsMouse
+                                   ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10)
+                                   : (aeRow.selected
+                                      ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.04)
+                                      : "transparent")
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                        }
+
+                        Rectangle {
+                            visible: aeRow.selected
+                            width: 2
+                            height: parent.height - 10
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: root.seal
+                        }
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 175
+                            elide: Text.ElideRight
+                            text: aeRow.modelData.name
+                            color: aeRow.selected ? root.ink : root.inkDeep
+                            font.family: root.mono
+                            font.pixelSize: 11
+                            font.letterSpacing: 1
+                        }
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 190
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: aeRow.modelData.lightMode ? "L" : "D"
+                            color: root.sumi
+                            font.family: root.mono
+                            font.pixelSize: 9
+                            font.letterSpacing: 1
+                            opacity: 0.7
+                        }
+
+                        Row {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+                            Repeater {
+                                model: (aeRow.modelData.colors || []).slice(0, 8)
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: 14
+                                    height: 14
+                                    color: modelData
+                                    border.color: Qt.rgba(0, 0, 0, 0.25)
+                                    border.width: 1
+                                }
+                            }
+                        }
+
+                        MouseArea {
+                            id: rowMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: root.selectedAether = aeRow.index
+                            onClicked: root.applyAetherBlueprint(aeRow.modelData.name)
+                        }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep }
+
+                Item {
+                    width: parent.width
+                    height: 26
+                    DisplayChip {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: "OPEN GUI"
+                        onActivated: {
+                            root.run("aether");
+                            root.aetherVisible = false;
+                        }
+                    }
+                    DisplayChip {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: "RANDOM REGEN"
+                        onActivated: {
+                            root.run("sh -c 'aether --generate \"$(aether --random-wallpaper)\"'");
+                            root.aetherVisible = false;
+                        }
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: root.sep; opacity: 0.5 }
+
+                Text {
+                    width: parent.width
+                    text: "ENTER APPLY  ·  G GUI  ·  R RANDOM  ·  Q/ESC CLOSE"
+                    color: root.sumi
+                    font.family: root.mono
+                    font.pixelSize: 10
+                    font.letterSpacing: 2
+                    horizontalAlignment: Text.AlignHCenter
+                    opacity: 0.7
+                }
+            }
+        }
+    }
+
     // ---------- Display popup ----------
     // Same shell as calendar/screenshots: full-screen transparent overlay
     // with a centred card that scales up from its centre. Sliders, a row of
@@ -3290,6 +3648,17 @@ ShellRoot {
         function open(): void    { root.openWeather(); }
         function close(): void   { root.weatherVisible = false; }
         function refresh(): void { root.refreshWeather(); }
+    }
+
+    // bind = SUPER, A, exec, qs ipc call aether toggle
+    IpcHandler {
+        target: "aether"
+        function toggle(): void {
+            if (root.aetherVisible) root.aetherVisible = false;
+            else root.openAether();
+        }
+        function open(): void  { root.openAether(); }
+        function close(): void { root.aetherVisible = false; }
     }
 
     // bind = SUPER, D, exec, qs ipc call display toggle
