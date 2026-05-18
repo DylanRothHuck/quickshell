@@ -78,6 +78,8 @@ ShellRoot {
     readonly property bool ghMode:   root.categoryFilter === Data.ghCategory
     readonly property bool favMode:  root.categoryFilter === Data.favCategory
     readonly property bool histMode: root.categoryFilter === Data.histCategory
+    readonly property bool procMode:  root.categoryFilter === Data.procCategory
+    readonly property bool themeMode: root.categoryFilter === Data.themeCategory
 
     Bookmarks { id: bookmarks }
 
@@ -120,8 +122,34 @@ ShellRoot {
     readonly property alias previewMeta:  fileSearch.previewMeta
     readonly property alias previewKind:  fileSearch.previewKind
 
-    readonly property bool previewActive: root.fileMode || root.ghMode
-    readonly property bool previewHasContent: root.previewPath !== "" || root.previewRepoUrl !== ""
+    Processes {
+        id: processes
+        active: root.procMode
+        selectedItem: root.filteredItems[root.selectedIndex] || null
+    }
+    readonly property alias procItems:    processes.items
+    readonly property alias procRunning:  processes.running
+    readonly property alias procPreviewText: processes.previewText
+    readonly property alias procPreviewPid:  processes.previewPid
+
+    Themes {
+        id: themes
+        active: root.themeMode
+    }
+    readonly property alias themeItems:   themes.items
+    readonly property alias themeLoaded:  themes.loaded
+
+    readonly property bool previewActive: root.fileMode || root.ghMode || root.procMode || root.themeMode
+    readonly property bool previewHasContent: {
+        if (root.fileMode || root.ghMode)
+            return root.previewPath !== "" || root.previewRepoUrl !== "";
+        if (root.procMode) return processes.previewPid !== "";
+        if (root.themeMode) {
+            const it = root.filteredItems[root.selectedIndex];
+            return !!(it && it.swatches && it.swatches.length > 0);
+        }
+        return false;
+    }
 
     readonly property string homeDir: Quickshell.env("HOME")
 
@@ -151,6 +179,9 @@ ShellRoot {
     onCategoryFilterChanged: {
         fileSearch.clear();
         ghSearch.clear();
+        // Processes/Themes own their own clear()-on-deactivate via their
+        // `active` binding, so the shell doesn't have to nudge them when
+        // the filter changes — they react automatically.
     }
 
 
@@ -173,7 +204,7 @@ ShellRoot {
     // 200+ entry array on unrelated property touches.
     property var omarchy: []
     property var nav: []
-    readonly property var allItems: root.omarchy.concat(appScan.apps).concat(navbarApps.items).concat(tuis.items)
+    readonly property var allItems: root.omarchy.concat(appScan.apps).concat(navbarApps.items).concat(tuis.items).concat(themes.items)
 
     // ---------- Launcher ----------
     // Matches omarchy's launch convention (see omarchy-launch-or-focus):
@@ -193,6 +224,22 @@ ShellRoot {
             root.categoryFilter = item.target;
             root.query = "";
             root.selectedIndex = 0;
+            return;
+        }
+        // Process kill — refresh stays in-mode so you can chain kills.
+        if (item.isProcess) {
+            processes.killPid(item.pid, false);
+            return;
+        }
+        // Theme apply — fire and forget; omarchy-theme-set rebuilds
+        // configs and reloads all the live apps that listen for it.
+        if (item.isTheme) {
+            runner.command = ["sh", "-c",
+                "setsid -f uwsm-app -- omarchy-theme-set \"$1\" >/dev/null 2>&1",
+                "sh", item.themeName];
+            runner.running = false;
+            runner.running = true;
+            root.close();
             return;
         }
         bookmarks.record(item);
@@ -261,13 +308,16 @@ ShellRoot {
         const filter = root.categoryFilter;
         const cap = root.maxResults;
 
-        // Favourites/history drill-ins draw from Bookmarks; scoring
-        // still applies so typing inside the drill filters live.
+        // Favourites/history/proc/theme drill-ins draw from their
+        // owning component; scoring still applies so typing inside the
+        // drill filters live.
         let pool;
-        if (root.favMode)       pool = bookmarks.favouriteItems;
-        else if (root.histMode) pool = bookmarks.historyItems;
-        else if (filter !== "") pool = root.allItems.filter(it => it.category === filter);
-        else                    pool = root.navRows.concat(root.allItems);
+        if (root.favMode)        pool = bookmarks.favouriteItems;
+        else if (root.histMode)  pool = bookmarks.historyItems;
+        else if (root.procMode)  pool = root.procItems;
+        else if (root.themeMode) pool = root.themeItems;
+        else if (filter !== "")  pool = root.allItems.filter(it => it.category === filter);
+        else                     pool = root.navRows.concat(root.allItems);
 
         // Empty query: preserve insertion order (nav rows first, then
         // omarchy actions, then apps). No scoring, no allocation overhead.
@@ -374,10 +424,11 @@ ShellRoot {
             // Card sits slightly above visual centre so the result list grows
             // downward without dragging the search field out of the eyeline.
             y: parent.height * 0.18
-            // Wide in search-with-preview modes (file, github) for a
-            // ~520px preview pane next to the result list; narrow back to
-            // 640 elsewhere so apps/omarchy mode keeps its compact feel.
-            width: (root.fileMode || root.ghMode) ? 1000 : 640
+            // Wide in any preview-bearing mode (file, github, processes,
+            // themes) so a ~520px preview pane fits next to the result
+            // list; narrow back to 640 elsewhere so apps and omarchy
+            // mode keep their compact feel.
+            width: root.previewActive ? 1000 : 640
             Behavior on width {
                 NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
             }
@@ -517,6 +568,20 @@ ShellRoot {
                                         ? "NO HISTORY YET"
                                         : total + " RECENT" + (total === 1 ? "" : "S");
                                 }
+                                if (root.procMode) {
+                                    const total = root.filteredItems.length;
+                                    if (processes.running && total === 0) return "LOADING PROCESSES…";
+                                    return total === 0
+                                        ? "NO PROCESSES"
+                                        : total + " PROCESS" + (total === 1 ? "" : "ES");
+                                }
+                                if (root.themeMode) {
+                                    const total = root.filteredItems.length;
+                                    if (!themes.loaded && total === 0) return "LOADING THEMES…";
+                                    return total === 0
+                                        ? "NO THEMES FOUND"
+                                        : total + " THEME" + (total === 1 ? "" : "S");
+                                }
                                 const total = root.filteredItems.length;
                                 if (root.query.length === 0) {
                                     return total + " ENTRIES  ·  " + root.allItems.length + " TOTAL";
@@ -535,9 +600,16 @@ ShellRoot {
                     Text {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.categoryFilter === ""
-                              ? "↑↓ / TAB  ·  ↵ OPEN  ·  ^S STAR  ·  ESC CLOSE"
-                              : "↑↓ / TAB  ·  ↵ " + (root.fileMode ? "OPEN FILE" : (root.ghMode ? "OPEN" : "RUN")) + "  ·  ^S STAR  ·  ESC BACK"
+                        text: {
+                            if (root.categoryFilter === "")
+                                return "↑↓ / TAB  ·  ↵ OPEN  ·  ^S STAR  ·  ESC CLOSE";
+                            let verb = "RUN";
+                            if (root.fileMode)       verb = "OPEN FILE";
+                            else if (root.ghMode)    verb = "OPEN";
+                            else if (root.procMode)  verb = "KILL";
+                            else if (root.themeMode) verb = "APPLY";
+                            return "↑↓ / TAB  ·  ↵ " + verb + "  ·  ^S STAR  ·  ESC BACK";
+                        }
                         color: root.sumi
                         font.family: root.mono
                         font.pixelSize: 10
@@ -558,7 +630,11 @@ ShellRoot {
                         id: searchPrompt
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.fileMode ? "󰉖" : (root.ghMode ? "󰊤" : "󰍉")
+                        text: root.fileMode ? "󰉖"
+                              : root.ghMode ? "󰊤"
+                              : root.procMode ? "󰍛"
+                              : root.themeMode ? "󰸌"
+                              : "󰍉"
                         color: root.seal
                         font.family: root.mono
                         font.pixelSize: 16
@@ -569,13 +645,14 @@ ShellRoot {
                         anchors.left: searchPrompt.right
                         anchors.leftMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.query.length === 0
-                              ? (root.fileMode
-                                 ? "Type to search files in ~ …"
-                                 : root.ghMode
-                                    ? "Your PRs · type to search GitHub repos"
-                                    : "Type to search apps, themes, settings…")
-                              : root.query
+                        text: {
+                            if (root.query.length > 0) return root.query;
+                            if (root.fileMode)  return "Type to search files in ~ …";
+                            if (root.ghMode)    return "Your PRs · type to search GitHub repos";
+                            if (root.procMode)  return "Type to filter processes by name, user, pid…";
+                            if (root.themeMode) return "Type to filter themes…";
+                            return "Type to search apps, themes, settings…";
+                        }
                         color: root.query.length === 0 ? root.sumi : root.ink
                         opacity: root.query.length === 0 ? 0.5 : 1.0
                         font.family: root.mono
@@ -620,7 +697,7 @@ ShellRoot {
                     // hairline + 1px inverse hairline divider sits between
                     // them. animated alongside card.width for a single
                     // smooth widen-and-split motion.
-                    readonly property real listFraction: (root.fileMode || root.ghMode) ? 0.44 : 1.0
+                    readonly property real listFraction: root.previewActive ? 0.44 : 1.0
 
                     ListView {
                         id: resultList
@@ -807,6 +884,8 @@ ShellRoot {
                                 }
                                 if (root.favMode)  return "NO FAVOURITES — CTRL+S TO STAR";
                                 if (root.histMode) return "NO HISTORY YET";
+                                if (root.procMode)  return processes.running ? "LOADING…" : "NO PROCESSES";
+                                if (root.themeMode) return themes.loaded ? "NO THEMES MATCH" : "LOADING THEMES…";
                                 return root.appsLoaded ? "NOTHING MATCHES" : "INDEXING APPS…";
                             }
                             color: root.sumi
@@ -841,9 +920,13 @@ ShellRoot {
                             anchors.top: parent.top
                             anchors.left: parent.left
                             anchors.right: parent.right
-                            text: root.ghMode
-                                  ? root.previewRepo
-                                  : (root.previewPath ? Data.basename(root.previewPath) : "")
+                            text: {
+                                const it = root.filteredItems[root.selectedIndex];
+                                if (root.ghMode) return root.previewRepo;
+                                if (root.procMode) return it ? it.title : "";
+                                if (root.themeMode) return it ? it.title : "";
+                                return root.previewPath ? Data.basename(root.previewPath) : "";
+                            }
                             color: root.ink
                             font.family: root.mono
                             font.pixelSize: 13
@@ -859,9 +942,15 @@ ShellRoot {
                             anchors.topMargin: 2
                             anchors.left: parent.left
                             anchors.right: parent.right
-                            text: root.ghMode
-                                  ? root.previewRepoUrl
-                                  : (root.previewPath ? Data.tildify(Data.dirname(root.previewPath), root.homeDir) : "")
+                            text: {
+                                const it = root.filteredItems[root.selectedIndex];
+                                if (root.ghMode) return root.previewRepoUrl;
+                                if (root.procMode) return it ? ("pid " + (it.pid || "") + "  ·  ↵ kills (SIGTERM)") : "";
+                                if (root.themeMode) return it
+                                    ? (it.isActive ? "ACTIVE  ·  ↵ reapplies" : "↵ applies theme")
+                                    : "";
+                                return root.previewPath ? Data.tildify(Data.dirname(root.previewPath), root.homeDir) : "";
+                            }
                             color: root.sumi
                             font.family: root.mono
                             font.pixelSize: 10
@@ -892,9 +981,12 @@ ShellRoot {
                             Text {
                                 anchors.centerIn: parent
                                 visible: !root.previewHasContent
-                                text: root.query.length === 0
-                                      ? "PREVIEW APPEARS HERE"
-                                      : (root.ghMode ? "SELECT A REPO" : "SELECT A FILE")
+                                text: {
+                                    if (root.ghMode)    return "SELECT A REPO";
+                                    if (root.procMode)  return "SELECT A PROCESS";
+                                    if (root.themeMode) return "SELECT A THEME";
+                                    return root.query.length === 0 ? "PREVIEW APPEARS HERE" : "SELECT A FILE";
+                                }
                                 color: root.sumi
                                 font.family: root.mono
                                 font.pixelSize: 10
@@ -958,6 +1050,76 @@ ShellRoot {
                                 elide: Text.ElideRight
                                 maximumLineCount: Math.max(1, Math.floor(previewBody.height / 13))
                             }
+
+                            // Process detail (cmdline + ps stats).
+                            Text {
+                                anchors.fill: parent
+                                visible: root.procMode && root.procPreviewText !== ""
+                                text: root.procPreviewText
+                                color: root.ink
+                                font.family: root.mono
+                                font.pixelSize: 10
+                                lineHeight: 1.4
+                                wrapMode: Text.Wrap
+                                textFormat: Text.PlainText
+                            }
+
+                            // Theme preview image: themes ship a
+                            // preview.png (lock screen sample) or, when
+                            // absent, fall back to the first file in the
+                            // backgrounds/ subdir. Themes.qml resolves
+                            // the path; missing themes get "" and the
+                            // image stays invisible so the swatches
+                            // below take the whole pane.
+                            Image {
+                                id: themeImg
+                                anchors.top: parent.top
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                visible: root.themeMode && status === Image.Ready
+                                height: visible ? Math.min(implicitHeight, previewBody.height * 0.6) : 0
+                                source: {
+                                    if (!root.themeMode) return "";
+                                    const it = root.filteredItems[root.selectedIndex];
+                                    return (it && it.previewImage) ? "file://" + it.previewImage : "";
+                                }
+                                fillMode: Image.PreserveAspectFit
+                                sourceSize.width: 1024
+                                sourceSize.height: 1024
+                                asynchronous: true
+                                smooth: true
+                                cache: true
+                            }
+
+                            // Theme swatch grid. Each swatch is a 30x30
+                            // tile coloured from the theme's colors.toml;
+                            // Flow lets them reflow if the preview pane
+                            // is narrowed. Sits under the preview image
+                            // when one resolves, otherwise pinned to the
+                            // top of the pane.
+                            Flow {
+                                anchors.top: themeImg.visible ? themeImg.bottom : parent.top
+                                anchors.topMargin: themeImg.visible ? 10 : 0
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                visible: root.themeMode
+                                spacing: 6
+                                Repeater {
+                                    model: {
+                                        const it = root.filteredItems[root.selectedIndex];
+                                        return (it && it.swatches) ? it.swatches : [];
+                                    }
+                                    delegate: Rectangle {
+                                        required property string modelData
+                                        width: 30
+                                        height: 30
+                                        radius: 2
+                                        color: modelData
+                                        border.width: 1
+                                        border.color: root.sep
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -978,7 +1140,9 @@ ShellRoot {
                         text: {
                             const it = root.filteredItems[root.selectedIndex];
                             if (!it) return "";
-                            if (it.isCategory) return "→ open " + it.target.toLowerCase();
+                            if (it.isCategory)  return "→ open " + it.target.toLowerCase();
+                            if (it.isProcess)   return "↵ kill " + (it.pid || "");
+                            if (it.isTheme)     return "↵ omarchy-theme-set " + (it.themeName || "");
                             return "$ " + it.exec;
                         }
                         color: root.sumi
