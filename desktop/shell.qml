@@ -10,14 +10,16 @@ import Quickshell
 //
 // Toggle the palette from a Hyprland keybind:
 //   bind = SUPER, SPACE, exec, qs -c desktop ipc call palette toggle
+//   bind = ALT,   SPACE, exec, qs -c desktop ipc call palette openCategory Quick
 ShellRoot {
     id: root
 
     Theme { id: theme }
 
     Navbar {
+        id: nav
         theme: theme
         onPaletteToggleRequested: omni.toggle()
     }
-    OmniMenu { id: omni; theme: theme }
+    OmniMenu { id: omni; theme: theme; navbar: nav }
 }

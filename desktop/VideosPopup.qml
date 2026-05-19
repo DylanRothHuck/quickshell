@@ -172,7 +172,7 @@ CardWindow {
                         height: durLabel.implicitHeight + 4
                         color: Qt.rgba(videosPopup.root.paper.r, videosPopup.root.paper.g, videosPopup.root.paper.b, 0.72)
                         visible: vidCell.filled && durLabel.text.length > 0
-                        radius: 0
+                        radius: videosPopup.root.cornerRadius
 
                         Text {
                             id: durLabel

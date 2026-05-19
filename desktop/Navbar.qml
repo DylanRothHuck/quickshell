@@ -29,6 +29,9 @@ Item {
     readonly property string serif: theme.serif
     readonly property string mono:  theme.mono
 
+    readonly property int  cornerRadius: theme.cornerRadius
+    readonly property bool round:        theme.round
+
     // Wired in desktop/shell.qml to the sibling OmniMenu's toggle().
     signal paletteToggleRequested()
 
@@ -133,12 +136,156 @@ Item {
     property string netKind: "none"   // "eth" | "wifi" | "none"
     property string wifiSsid: ""
     property int    wifiSignal: 0
+
+    // Wi-Fi scan state for the Quick panel. `wifiNetworks` is a list of
+    // {ssid, signal, security, inUse} sorted desc by signal. Driven by
+    // nmcli; populated on demand by refreshWifi().
+    property var    wifiNetworks: []
+    property bool   wifiRadioOn: true
+    property bool   wifiScanning: false
+    property string _wifiNetworksSer: ""
+
+    // iwd-based: omarchy uses iwctl, not nmcli. The probe detects the
+    // first station-mode device dynamically so multi-radio laptops work.
+    function refreshWifi() {
+        if (wifiScanProbe.running) return;
+        root.wifiScanning = true;
+        wifiScanProbe.running = false;
+        wifiScanProbe.running = true;
+    }
+    function connectWifi(ssid) {
+        if (!ssid) return;
+        // Saved networks reconnect silently. New networks need a passphrase
+        // which we can't prompt for inside Quickshell — for those, the user
+        // has to run `iwctl` once manually. After a successful connect the
+        // post-action timer re-probes so the inUse flag flips.
+        root.run("DEV=$(iwctl --dont-ask device list 2>/dev/null"
+                 + " | sed 's/\\x1b\\[[0-9;]*m//g'"
+                 + " | awk '/station/{print $1; exit}');"
+                 + " [ -n \"$DEV\" ] && iwctl --dont-ask station \"$DEV\" connect "
+                 + JSON.stringify(ssid));
+        wifiPostConnectTimer.restart();
+    }
+    function disconnectWifi() {
+        root.run("DEV=$(iwctl --dont-ask device list 2>/dev/null"
+                 + " | sed 's/\\x1b\\[[0-9;]*m//g'"
+                 + " | awk '/station/{print $1; exit}');"
+                 + " [ -n \"$DEV\" ] && iwctl --dont-ask station \"$DEV\" disconnect");
+        wifiPostConnectTimer.restart();
+    }
+    function toggleWifiRadio() {
+        const target = root.wifiRadioOn ? "off" : "on";
+        root.wifiRadioOn = !root.wifiRadioOn;
+        root.run("DEV=$(iwctl --dont-ask device list 2>/dev/null"
+                 + " | sed 's/\\x1b\\[[0-9;]*m//g'"
+                 + " | awk '/^[[:space:]]+[a-z][a-z0-9]+/{print $1; exit}');"
+                 + " [ -n \"$DEV\" ] && iwctl --dont-ask device \"$DEV\" set-property Powered " + target);
+        wifiPostConnectTimer.restart();
+    }
+    Timer {
+        id: wifiPostConnectTimer
+        interval: 800
+        repeat: false
+        onTriggered: root.refreshWifi()
+    }
     property string btIcon:  "󰂲"
     property bool   btPowered: false
     property int    btCount: 0
+    // Bluetooth device list for the Quick panel. Each entry:
+    // { mac, name, connected, paired, trusted }.
+    property var    btDevices: []
+    property bool   btScanning: false
+    property string _btDevicesSer: ""
+
+    function refreshBluetooth() {
+        if (btDevicesProbe.running) return;
+        btDevicesProbe.running = false;
+        btDevicesProbe.running = true;
+    }
+    // bluez-tools path (omarchy ships bt-adapter / bt-device, not the
+    // bluetoothctl utility). Same semantics as before, different CLI.
+    function btConnect(mac) {
+        if (!mac) return;
+        root.run("bt-device --connect " + mac);
+        btPostActionTimer.restart();
+    }
+    function btDisconnect(mac) {
+        if (!mac) return;
+        root.run("bt-device --disconnect " + mac);
+        btPostActionTimer.restart();
+    }
+    function btTogglePower() {
+        root.btPowered = !root.btPowered;
+        root.run("bt-adapter -s Powered " + (root.btPowered ? 1 : 0));
+        btPostActionTimer.restart();
+    }
+    function btToggleScan() {
+        root.btScanning = !root.btScanning;
+        // `bt-adapter -d --timeout N` blocks for N seconds while
+        // discovering, so fork it off and let the refresh probe pick up
+        // any new devices it surfaces.
+        if (root.btScanning) {
+            root.run("setsid -f bt-adapter -d --timeout 15 >/dev/null 2>&1");
+            btScanStopTimer.restart();
+        }
+        btPostActionTimer.restart();
+    }
+    Timer {
+        id: btPostActionTimer
+        interval: 600
+        repeat: false
+        onTriggered: root.refreshBluetooth()
+    }
+    Timer {
+        // Clear the "scanning" flag once the bluetoothctl --timeout expires.
+        id: btScanStopTimer
+        interval: 15000
+        repeat: false
+        onTriggered: root.btScanning = false
+    }
     property string audioIcon: ""
     property int    audioVol: 0
     property bool   audioMuted: false
+    // List of PipeWire/Pulse output sinks with the current default flagged.
+    // Each entry: { id, name, description, isDefault }. Populated by the
+    // audioSinks probe on demand (refreshed when the Audio quick panel opens).
+    property var    audioSinks: []
+    property string audioDefaultSink: ""
+    property string _audioSinksSer: ""
+
+    function setDefaultSink(id) {
+        if (!id) return;
+        root.audioDefaultSink = id;
+        root.run("wpctl set-default " + id);
+        // Re-probe so the badge re-evaluates after wpctl applies.
+        audioSinksProbe.running = false;
+        audioSinksProbe.running = true;
+    }
+    function refreshAudioSinks() {
+        audioSinksProbe.running = false;
+        audioSinksProbe.running = true;
+    }
+
+    // power-profiles-daemon's current profile, if available. Empty when
+    // powerprofilesctl isn't installed or no profile is set — keeps the
+    // Quick detail panel's selector hidden in that case.
+    property string powerProfile: ""
+    property var    powerProfiles: []  // list of available profiles
+
+    function setPowerProfile(name) {
+        if (!name) return;
+        root.powerProfile = name;
+        root.run("powerprofilesctl set " + name);
+        // Re-probe so the chip reflects the daemon's actual state in
+        // case it rejected the request (e.g. on AC-only machines).
+        powerProfileRefreshTimer.restart();
+    }
+    Timer {
+        id: powerProfileRefreshTimer
+        interval: 400
+        repeat: false
+        onTriggered: root.refreshPowerProfile()
+    }
 
     // omarchy-update-available exits 0 when the local omarchy clone is
     // behind the latest tag. The bar surfaces a small refresh glyph next
@@ -357,10 +504,16 @@ Item {
     function openAether() {
         root.aetherQuery = "";
         root.selectedAether = 0;
+        refreshAetherBlueprints();
+        root.aetherVisible = true;
+    }
+    // Re-runs the blueprints probe without surfacing the standalone
+    // popup, so embedded views (Quick panel) can hydrate their cache
+    // without doubling up the UI.
+    function refreshAetherBlueprints() {
         root.aetherLoading = true;
         aetherProbe.running = false;
         aetherProbe.running = true;
-        root.aetherVisible = true;
     }
 
     function moveAetherSelection(delta, wrap) {
@@ -568,6 +721,17 @@ Item {
         root.brightnessPct = pct;
         root.run("brightnessctl set " + pct + "%");
     }
+    function setVolume(pct) {
+        pct = Math.max(0, Math.min(150, Math.round(pct)));
+        root.audioVol = pct;
+        // --allow-boost lets values above 100 land; pamixer caps at 150
+        // anyway, matching the visible range on most distros.
+        root.run("pamixer --allow-boost --set-volume " + pct);
+    }
+    function toggleMute() {
+        root.audioMuted = !root.audioMuted;
+        root.run("pamixer -t");
+    }
     function setGamma(pct) {
         pct = Math.max(50, Math.min(150, Math.round(pct)));
         root.gammaPct = pct;
@@ -707,6 +871,15 @@ Item {
     function fmtTemp(c) {
         const v = Math.round(c);
         return (v > 0 ? "+" : "") + v + "°";
+    }
+
+    // Wi-Fi signal-bars glyph from a 0-100% strength reading. Same ramp
+    // the netProbe uses to drive the bar icon — shared so the Quick
+    // panel rows render identical iconography.
+    readonly property var _wifiBarsRamp: ["󰤯","󰤟","󰤢","󰤥","󰤨"]
+    function wifiBarsGlyph(pct) {
+        const idx = pct >= 80 ? 4 : pct >= 60 ? 3 : pct >= 40 ? 2 : pct >= 20 ? 1 : 0;
+        return _wifiBarsRamp[idx];
     }
 
     function openWeather() {
@@ -933,9 +1106,7 @@ Item {
                     const c = rest.indexOf(":");
                     const sig = parseInt(c < 0 ? rest : rest.slice(0, c)) || 0;
                     const ssid = c < 0 ? "" : rest.slice(c + 1);
-                    const ramp = ["󰤯","󰤟","󰤢","󰤥","󰤨"];
-                    const idx = sig >= 80 ? 4 : sig >= 60 ? 3 : sig >= 40 ? 2 : sig >= 20 ? 1 : 0;
-                    root.netIcon = ramp[idx]; root.netKind = "wifi";
+                    root.netIcon = root.wifiBarsGlyph(sig); root.netKind = "wifi";
                     root.wifiSignal = sig; root.wifiSsid = ssid;
                 } else {
                     root.netIcon = "󰤮"; root.netKind = "none";
@@ -1008,23 +1179,28 @@ Item {
     readonly property bool isIdle: idleMonitor.isIdle
 
     // ---------- Bluetooth status ----------
+    // bluez-tools path: bt-adapter --info for power state only — the
+    // per-device connected count is updated by btDevicesProbe which
+    // runs on-demand from the Quick panel. Keeping the 5s loop here
+    // single-shell-out avoids N+1 forks on machines with several
+    // paired devices.
     Process {
         id: btProbe
         running: false
         command: ["bash", "-lc",
-            "p=$(bluetoothctl show 2>/dev/null | grep -c 'Powered: yes' || echo 0); "
-            + "c=$(bluetoothctl devices Connected 2>/dev/null | wc -l); "
-            + "if [ \"$p\" = 0 ]; then echo off; "
-            + "else echo \"on:$c\"; fi"]
+            "p=$(bt-adapter --info 2>/dev/null | awk '/Powered:/{print $2; exit}');"
+            + " if [ \"$p\" = 1 ]; then echo on; else echo off; fi"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const s = this.text.trim();
-                if (s === "off") {
-                    root.btIcon = "󰂲"; root.btPowered = false; root.btCount = 0;
-                } else if (s.startsWith("on:")) {
-                    const n = parseInt(s.slice(3)) || 0;
-                    root.btPowered = true; root.btCount = n;
-                    root.btIcon = n > 0 ? "󰂱" : root.icoBtOn;
+                const powered = (s === "on");
+                if (root.btPowered !== powered) root.btPowered = powered;
+                if (!powered) {
+                    if (root.btIcon !== "󰂲") root.btIcon = "󰂲";
+                    if (root.btCount !== 0)  root.btCount = 0;
+                } else {
+                    const icon = root.btCount > 0 ? "󰂱" : root.icoBtOn;
+                    if (root.btIcon !== icon) root.btIcon = icon;
                 }
             }
         }
@@ -1063,6 +1239,203 @@ Item {
     }
     Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: { audioProbe.running = false; audioProbe.running = true; } }
+
+    // ---------- Bluetooth device probe ----------
+    // Walks every paired/known device through `bt-device --info` to pull
+    // its name + connected/paired/trusted flags. Cheap at the few-devices-
+    // per-machine scale; the `bt-device -l` output is "Name (MAC)" lines
+    // with a leading "Added devices:" header that tail strips.
+    Process {
+        id: btDevicesProbe
+        running: false
+        command: ["bash", "-lc",
+            "macs=$(bt-device -l 2>/dev/null | tail -n +2"
+            + "   | sed -n 's/.*(\\([0-9A-F:]\\{17\\}\\))$/\\1/p');"
+            + " for m in $macs; do"
+            + "   info=$(bt-device --info \"$m\" 2>/dev/null);"
+            + "   [ -z \"$info\" ] && continue;"
+            + "   name=$(printf '%s' \"$info\" | awk -F': ' '/^[[:space:]]*Name:/{print $2; exit}');"
+            + "   conn=$(printf '%s' \"$info\" | awk '/^[[:space:]]*Connected: 1/{print 1; exit}');"
+            + "   paired=$(printf '%s' \"$info\" | awk '/^[[:space:]]*Paired: 1/{print 1; exit}');"
+            + "   trusted=$(printf '%s' \"$info\" | awk '/^[[:space:]]*Trusted: 1/{print 1; exit}');"
+            + "   printf '%s\\t%s\\t%s\\t%s\\t%s\\n' \"$m\" \"${name:-$m}\" \"${conn:-0}\" \"${paired:-0}\" \"${trusted:-0}\";"
+            + " done"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = this.text.trim().split("\n").filter(s => s.length > 0);
+                const devs = lines.map(line => {
+                    const f = line.split("\t");
+                    return {
+                        mac:       f[0] || "",
+                        name:      (f[1] || "").trim() || (f[0] || ""),
+                        connected: f[2] === "1",
+                        paired:    f[3] === "1",
+                        trusted:   f[4] === "1"
+                    };
+                });
+                // Connected first, then paired, then everything else.
+                devs.sort((a, b) =>
+                    (b.connected - a.connected)
+                    || (b.paired - a.paired)
+                    || a.name.localeCompare(b.name));
+                // Equality guard so the Quick panel's Repeater doesn't
+                // re-evaluate every refresh when nothing has changed.
+                const serialised = JSON.stringify(devs);
+                if (serialised === root._btDevicesSer) return;
+                root._btDevicesSer = serialised;
+                root.btDevices = devs;
+                const connCount = devs.filter(d => d.connected).length;
+                if (root.btCount !== connCount) root.btCount = connCount;
+            }
+        }
+    }
+
+    // ---------- Wi-Fi scan probe ----------
+    // iwctl path (omarchy ships iwd, not NetworkManager): detect the
+    // station device, check Powered state, kick a non-blocking scan,
+    // then parse human-formatted get-networks output. Signal is reported
+    // in tenths of dBm (e.g. -6400 = -64 dBm); convert to a 0-100% bar
+    // on the QML side. ANSI codes are stripped before parsing.
+    Process {
+        id: wifiScanProbe
+        running: false
+        command: ["bash", "-lc",
+            "DEV=$(iwctl --dont-ask device list 2>/dev/null"
+            + "   | sed 's/\\x1b\\[[0-9;]*m//g'"
+            + "   | awk '/station/{print $1; exit}');"
+            + " if [ -z \"$DEV\" ]; then echo 'RADIO|off'; exit 0; fi;"
+            + " powered=$(iwctl --dont-ask device \"$DEV\" show 2>/dev/null"
+            + "   | sed 's/\\x1b\\[[0-9;]*m//g'"
+            + "   | awk '/Powered/{print $NF; exit}');"
+            + " if [ \"$powered\" != on ]; then echo 'RADIO|off'; exit 0; fi;"
+            + " echo 'RADIO|on';"
+            + " iwctl --dont-ask station \"$DEV\" scan >/dev/null 2>&1;"
+            + " iwctl --dont-ask station \"$DEV\" get-networks rssi-dbms 2>/dev/null"
+            + "   | sed 's/\\x1b\\[[0-9;]*m//g'"
+            + "   | awk '"
+            + "       /^-+$/ { sep++; next }"
+            + "       sep < 2 || $0 ~ /^[[:space:]]*$/ { next }"
+            + "       {"
+            + "         line=$0;"
+            + "         conn=(index(substr(line,1,4),\">\")>0)?1:0;"
+            + "         sub(/^[ >]+/, \"\", line);"
+            + "         sub(/[ ]+$/, \"\", line);"
+            + "         if (match(line, /^(.*[^ ])  +([^ ]+)  +(-?[0-9]+)$/, m))"
+            + "           printf \"%d\\t%s\\t%s\\t%s\\n\", conn, m[1], m[2], m[3];"
+            + "       }'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = this.text.split("\n").filter(s => s.length > 0);
+                let radioOn = false;
+                const networks = [];
+                for (const line of lines) {
+                    if (line.startsWith("RADIO|")) {
+                        radioOn = line.slice(6) === "on";
+                        continue;
+                    }
+                    const f = line.split("\t");
+                    if (f.length < 4) continue;
+                    // dBm tenths -> dBm -> 0-100%. -50dBm or stronger pegs at 100%.
+                    const dbm = parseInt(f[3]) / 100;
+                    const pct = Math.max(0, Math.min(100, Math.round(2 * (dbm + 100))));
+                    networks.push({
+                        inUse: f[0] === "1",
+                        ssid: f[1],
+                        signal: pct,
+                        security: f[2]
+                    });
+                }
+                networks.sort((a, b) => (b.inUse - a.inUse) || (b.signal - a.signal));
+                if (root.wifiRadioOn !== radioOn) root.wifiRadioOn = radioOn;
+                const ser = JSON.stringify(networks);
+                if (ser !== root._wifiNetworksSer) {
+                    root._wifiNetworksSer = ser;
+                    root.wifiNetworks = networks;
+                }
+                root.wifiScanning = false;
+            }
+        }
+    }
+
+    // ---------- Audio sinks probe ----------
+    // wpctl status's structured form: lines like
+    //   "*    52. WH-1000XM4              [vol: 0.45]"
+    // The leading "*" flags the current default; we capture id, label, and
+    // default state. Skipped automatically when wireplumber isn't around.
+    Process {
+        id: audioSinksProbe
+        running: false
+        // Tracks the Audio top-level section AND the Sinks subsection
+        // separately so we don't pick up Sources, Filters, or Video's
+        // Sinks. Section header lines start with `├─` or `└─`; the Audio
+        // section ends at the next top-level label (Video / Settings).
+        command: ["bash", "-lc",
+            "wpctl status 2>/dev/null | awk '"
+            + "  /^Audio$/                                    {sec=\"audio\"; sub=\"\"; next}"
+            + "  /^[A-Z][a-zA-Z]+$/                           {sec=\"\";      sub=\"\"; next}"
+            + "  /^[[:space:]]*[├└]─[[:space:]]*Sinks:/       {sub=\"sinks\"; next}"
+            + "  /^[[:space:]]*[├└]─/                          {sub=\"\";      next}"
+            + "  sec==\"audio\" && sub==\"sinks\" {"
+            + "    star=(index($0,\"*\")>0 && index($0,\"*\")<index($0,\".\")) ? 1 : 0;"
+            + "    line=$0;"
+            + "    sub(/^[ │├─└*]+/, \"\", line);"
+            + "    if (match(line, /^([0-9]+)\\. (.+)\\[/, m)) {"
+            + "      gsub(/[ \\t]+$/, \"\", m[2]);"
+            + "      printf \"%s\\t%s\\t%d\\n\", m[1], m[2], star;"
+            + "    }"
+            + "  }'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = this.text.trim().split("\n").filter(s => s.length > 0);
+                const sinks = lines.map(line => {
+                    const f = line.split("\t");
+                    return {
+                        id: f[0] || "",
+                        name: (f[1] || "").trim(),
+                        isDefault: f[2] === "1"
+                    };
+                });
+                const ser = JSON.stringify(sinks);
+                if (ser !== root._audioSinksSer) {
+                    root._audioSinksSer = ser;
+                    root.audioSinks = sinks;
+                }
+                const def = sinks.find(s => s.isDefault);
+                if (def && root.audioDefaultSink !== def.id) root.audioDefaultSink = def.id;
+            }
+        }
+    }
+
+    // ---------- Power-profile probe ----------
+    // On-demand only: triggered once at startup so the Battery tile has
+    // current state ready, and from setPowerProfile()/refreshPowerProfile()
+    // afterwards. Power-profiles-daemon doesn't change behind our back at
+    // any meaningful rate, so a 5s polling loop is wasted work.
+    function refreshPowerProfile() {
+        powerProfileProbe.running = false;
+        powerProfileProbe.running = true;
+    }
+    Process {
+        id: powerProfileProbe
+        running: false
+        command: ["bash", "-lc",
+            "cur=$(powerprofilesctl get 2>/dev/null); "
+            + "if [ -z \"$cur\" ]; then echo '|'; exit 0; fi; "
+            + "list=$(powerprofilesctl list 2>/dev/null | awk -F: '/^[ *]+[a-z-]+:/{gsub(/^[ *]+|:$/,\"\",$1); print $1}' | paste -sd,); "
+            + "printf '%s|%s' \"$cur\" \"$list\""]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const p = this.text.trim().split("|");
+                if (p.length !== 2) return;
+                const cur = p[0] || "";
+                const list = p[1] ? p[1].split(",").filter(Boolean) : [];
+                if (root.powerProfile !== cur) root.powerProfile = cur;
+                if (JSON.stringify(root.powerProfiles) !== JSON.stringify(list))
+                    root.powerProfiles = list;
+            }
+        }
+    }
+    Component.onCompleted: refreshPowerProfile()
 
     // ---------- Omarchy update probe ----------
     // Mirrors waybar's custom/update: omarchy-update-available exits 0 and

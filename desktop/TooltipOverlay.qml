@@ -59,7 +59,7 @@ PanelWindow {
         color: tooltipOverlay.root.bg
         border.color: tooltipOverlay.root.sep
         border.width: 1
-        radius: 0
+        radius: tooltipOverlay.root.cornerRadius
         opacity: tooltipOverlay.reveal
 
         Text {

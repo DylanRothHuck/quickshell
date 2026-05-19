@@ -33,7 +33,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         anchors.margins: 3
-        radius: 0
+        radius: modItem.root.cornerRadius
         color: mouse.containsMouse ? Qt.rgba(modItem.root.ink.r, modItem.root.ink.g, modItem.root.ink.b, 0.08) : "transparent"
         Behavior on color { ColorAnimation { duration: 180 } }
     }

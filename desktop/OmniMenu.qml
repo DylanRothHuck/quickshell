@@ -16,6 +16,13 @@ Item {
     id: root
 
     required property var theme
+    // Navbar instance handed in from shell.qml. Used by Quick mode to
+    // bind live telemetry (battery, audio, network, bluetooth, weather,
+    // …) into the tile grid. Optional so OmniMenu can still load without
+    // a navbar (e.g. headless config); Quick tiles fall back to "—" then.
+    // Named `navbar` to avoid colliding with the existing `nav: []`
+    // category-row array further down.
+    property var navbar: null
 
     readonly property color paper:   theme.paper
     readonly property color ink:     theme.ink
@@ -41,6 +48,8 @@ Item {
 
     readonly property string mono:  theme.mono
     readonly property string serif: theme.serif
+
+    readonly property int cornerRadius: theme.cornerRadius
 
     // Sources that feed `allItems`. AppScan reads .desktop files;
     // NavbarApps probes the navbar shell for its IpcHandler widgets and
@@ -72,8 +81,198 @@ Item {
     readonly property bool histMode: root.categoryFilter === Data.histCategory
     readonly property bool procMode:  root.categoryFilter === Data.procCategory
     readonly property bool themeMode: root.categoryFilter === Data.themeCategory
+    // Quick mode swaps the result list for a live-tile grid. Tiles bind
+    // to nav telemetry for instantaneous state; clicking one drops an
+    // expanded detail panel below the grid with that tile's adjustments.
+    readonly property bool quickMode: root.categoryFilter === "Quick"
+    readonly property int  quickGridCols: 4
+    // null = no expansion; otherwise the tile object whose detail panel
+    // is currently revealed under the grid.
+    property var expandedTile: null
+    function expandTile(t) {
+        if (!t) { root.expandedTile = null; return; }
+        // Click same tile to collapse; click a different tile to swap.
+        root.expandedTile = (root.expandedTile && root.expandedTile.key === t.key)
+                            ? null : t;
+    }
+    function collapseTile() { root.expandedTile = null; }
 
     Bookmarks { id: bookmarks }
+
+    // ---------- Quick tiles ----------
+    // Hardcoded so each entry can bind its sub-label to live navbar
+    // telemetry. Order matches the Samsung-style quick panel — most
+    // glanced (battery/audio/wifi/bt) first. `action` is a shell command
+    // run via the same Process the standard activate() uses; popup
+    // togglers call back into the navbar's own IPC handlers so the
+    // existing animations & anchoring just work.
+    readonly property var quickTiles: {
+        const n = root.navbar;
+        if (!n) return [];
+        const chargingTag = n.batState === "Charging"    ? " · CHARGING"
+                          : n.batState === "Full"        ? " · FULL"
+                          : n.batState === "Not charging" ? " · PLUGGED"
+                          : "";
+        return [
+            {
+                key: "battery",
+                glyph: n.batteryIcon(),
+                label: "BATTERY",
+                sub: n.batVal + "%" + chargingTag
+                     + (n.batPower >= 0.05
+                        ? "  " + n.batPower.toFixed(1) + "W"
+                        : ""),
+                tone: n.batVal <= 10 ? n.seal
+                                     : n.batVal <= 20 ? n.indigo
+                                                      : n.ink,
+                keywords: "battery power charge plugged ac percent watt",
+                action: "omarchy-menu power"
+            },
+            {
+                key: "audio",
+                glyph: n.audioIcon,
+                label: "AUDIO",
+                sub: n.audioMuted ? "MUTED" : (n.audioVol + "%"),
+                tone: n.audioMuted ? n.seal : n.ink,
+                keywords: "audio sound speaker volume mute pulse pipewire",
+                action: "omarchy-launch-audio",
+                longAction: "pamixer -t"
+            },
+            {
+                key: "network",
+                glyph: n.netIcon,
+                label: n.netKind === "wifi" ? "WI-FI"
+                       : n.netKind === "eth"  ? "ETHERNET"
+                                              : "OFFLINE",
+                sub: n.netKind === "wifi"
+                     ? ((n.wifiSsid || "(hidden)") + " · " + n.wifiSignal + "%")
+                     : n.netKind === "eth" ? "CONNECTED" : "—",
+                tone: n.netKind === "none" ? n.inkDeep : n.ink,
+                keywords: "wifi wireless network internet ssid signal ethernet eth",
+                action: "omarchy-launch-wifi"
+            },
+            {
+                key: "bluetooth",
+                glyph: n.btIcon,
+                label: "BLUETOOTH",
+                sub: !n.btPowered ? "OFF"
+                                  : (n.btCount > 0 ? n.btCount + " CONN" : "ON"),
+                tone: !n.btPowered ? n.inkDeep : n.ink,
+                keywords: "bluetooth bt pair device headset speaker keyboard",
+                action: "omarchy-launch-bluetooth"
+            },
+            {
+                key: "weather",
+                glyph: n.weatherUnavailable ? "?"
+                     : (n.weatherLoaded ? n.weatherIcon : "·"),
+                label: "WEATHER",
+                sub: n.weatherUnavailable ? "OFFLINE"
+                     : (n.weatherLoaded ? Math.round(n.weatherTempC) + "°C" : "…"),
+                tone: n.weatherUnavailable ? n.inkDeep : n.ink,
+                keywords: "weather forecast temperature wttr rain sun wind",
+                action: "qs -c desktop ipc call weather toggle",
+                longAction: "qs -c desktop ipc call weather refresh"
+            },
+            {
+                key: "display",
+                glyph: n.icoDisplay,
+                label: "DISPLAY",
+                sub: n.brightnessPct + "%"
+                     + (n.warmthK < 6500 ? "  " + n.warmthK + "K" : ""),
+                tone: (n.warmthK < 6500 || n.gammaPct !== 100 || n.brightnessPct < 100)
+                      ? n.seal : n.ink,
+                keywords: "display monitor brightness warmth gamma night light blue temperature dim",
+                action: "qs -c desktop ipc call display toggle",
+                longAction: "qs -c desktop ipc call display reset"
+            },
+            {
+                key: "aether",
+                glyph: n.icoAether,
+                label: "AETHER",
+                sub: "THEMES",
+                tone: n.ink,
+                keywords: "aether theme blueprint palette swatch picker wallpaper",
+                action: "qs -c desktop ipc call aether toggle",
+                longAction: "sh -c 'aether --generate \"$(aether --random-wallpaper)\"'"
+            },
+            {
+                key: "cpu",
+                glyph: "󰍛",
+                label: "CPU",
+                sub: Math.round(n.cpuVal) + "%",
+                tone: n.cpuVal > 80 ? n.seal : n.ink,
+                keywords: "cpu processor memory monitor btop top htop performance load",
+                action: "omarchy-launch-or-focus-tui btop"
+            },
+            {
+                key: "calendar",
+                glyph: "󰃭",
+                label: "CALENDAR",
+                sub: n.dd + " " + n.mon,
+                tone: n.ink,
+                keywords: "calendar date month day today schedule planner",
+                action: "qs -c desktop ipc call calendar toggle"
+            },
+            {
+                key: "screenshots",
+                glyph: n.icoCamera,
+                label: "SHOTS",
+                sub: "BROWSE",
+                tone: n.ink,
+                keywords: "screenshots shots browse pictures captures images gallery",
+                action: "qs -c desktop ipc call screenshots toggle",
+                longAction: "omarchy-capture-screenshot"
+            },
+            {
+                key: "videos",
+                glyph: n.icoFilm,
+                label: "VIDEOS",
+                sub: "BROWSE",
+                tone: n.ink,
+                keywords: "videos films clips recordings browse gallery library",
+                action: "qs -c desktop ipc call videos toggle"
+            },
+            {
+                key: "power",
+                glyph: n.icoPower,
+                label: "POWER",
+                sub: "MENU",
+                tone: n.ink,
+                keywords: "power menu suspend hibernate logout restart shutdown lock",
+                action: "omarchy-menu power"
+            }
+        ];
+    }
+
+    // No search field in quickMode — tiles are always the full set so
+    // grid arithmetic (gridCols * row) stays predictable. Kept as a
+    // separate property so non-quick code paths don't need to branch.
+    readonly property var filteredQuickTiles: root.quickTiles
+
+    // Same launch envelope as activate() so popup IPCs (qs ipc call …)
+    // get fired off-process and quickshell can close immediately.
+    function activateQuickTile(t) {
+        if (!t || !t.action) return;
+        runner.command = ["sh", "-c",
+                          "setsid -f uwsm-app -- bash -c "
+                          + JSON.stringify(t.action)
+                          + " >/dev/null 2>&1"];
+        runner.running = false;
+        runner.running = true;
+        root.close();
+    }
+
+    // Long-press / right-click hook. Stays open so a "refresh weather"
+    // or "reset display" doesn't dismiss the panel mid-glance.
+    function longQuickTile(t) {
+        if (!t || !t.longAction) return;
+        runner.command = ["sh", "-c",
+                          "setsid -f uwsm-app -- bash -c "
+                          + JSON.stringify(t.longAction)
+                          + " >/dev/null 2>&1"];
+        runner.running = false;
+        runner.running = true;
+    }
 
     // gh CLI-backed repo search + README preview.
     GhSearch {
@@ -351,6 +550,16 @@ Item {
         resultList.positionViewAtIndex(next, ListView.Contain);
     }
 
+    // Grid-aware step for Quick mode. `delta` may exceed ±1 (arrow Up/Down
+    // moves by gridCols). Clamps rather than wraps so Up from the top row
+    // doesn't jump to the last row of a partial bottom row.
+    function moveQuickSelection(delta) {
+        const n = root.filteredQuickTiles.length;
+        if (n === 0) return;
+        const next = Math.max(0, Math.min(n - 1, root.selectedIndex + delta));
+        root.selectedIndex = next;
+    }
+
     Component.onCompleted: {
         root.omarchy = Data.annotate(Data.omarchyItems);
         root.nav     = Data.annotate(Data.categoryNav);
@@ -363,6 +572,13 @@ Item {
         function open(): void { root.open() }
         function close(): void { root.close() }
         function refresh(): void { appScan.refresh(); }
+        // Open OmniMenu pre-pivoted to a drill-down category (e.g. "Quick").
+        // Lets Hyprland bind a shortcut straight into a category without
+        // exposing the visual grid as a separate surface.
+        function openCategory(cat: string): void {
+            root.open();
+            root.categoryFilter = cat;
+        }
     }
 
     // ---------- Panel ----------
@@ -411,7 +627,7 @@ Item {
             color: root.bg
             border.color: root.sep
             border.width: 1
-            radius: 0
+            radius: root.cornerRadius
             transformOrigin: Item.Center
             scale: panel.reveal
 
@@ -420,63 +636,123 @@ Item {
 
             focus: root.visible_
             Keys.onPressed: function(event) {
-                if (event.key === Qt.Key_Escape) {
-                    // Esc cascade: clear the typed query first, then
+                // hjkl → arrow translation (Vim-style nav). Applied only
+                // when the typed query is empty so the letters still
+                // reach the query buffer when the user is actually
+                // typing in the main palette. In quickMode there is no
+                // typing buffer, so hjkl always maps.
+                const _hjklMap = {};
+                _hjklMap[Qt.Key_H] = Qt.Key_Left;
+                _hjklMap[Qt.Key_J] = Qt.Key_Down;
+                _hjklMap[Qt.Key_K] = Qt.Key_Up;
+                _hjklMap[Qt.Key_L] = Qt.Key_Right;
+                const _wrap = (e) => {
+                    if (_hjklMap[e.key] === undefined) return e;
+                    if (!root.quickMode && root.query.length > 0) return e;
+                    return { key: _hjklMap[e.key], modifiers: e.modifiers, text: e.text };
+                };
+                const e2 = _wrap(event);
+
+                // When a quick tile is expanded, give its body first crack
+                // at the key so arrow/Tab/Enter drive the body's own focus
+                // chain (volume slider, wi-fi list, bluetooth list, …)
+                // instead of the tile grid. Bodies return true from
+                // kbdHandle() to swallow the event; anything they leave
+                // unhandled (e.g. Esc) bubbles to the cascade below.
+                if (root.quickMode && root.expandedTile !== null
+                    && bodyLoader.item
+                    && typeof bodyLoader.item.kbdHandle === "function"
+                    && bodyLoader.item.kbdHandle(e2)) {
+                    event.accepted = true;
+                    return;
+                }
+                if (e2.key === Qt.Key_Escape) {
+                    // Esc cascade: collapse the quick-tile detail panel
+                    // first (if open), then clear the typed query, then
                     // unwind drill-down, then close. Each Esc undoes
                     // exactly one layer of state so the palette never
                     // exits with a half-typed query on screen.
-                    if (root.query.length > 0) {
+                    if (root.quickMode && root.expandedTile !== null) {
+                        root.expandedTile = null;
+                    } else if (root.query.length > 0) {
                         root.query = "";
                         root.selectedIndex = 0;
                     } else if (!root.goUp()) {
                         root.close();
                     }
                     event.accepted = true;
-                } else if (event.key === Qt.Key_Down
-                           || (event.key === Qt.Key_Tab && !(event.modifiers & Qt.ShiftModifier))) {
+                } else if (root.quickMode && e2.key === Qt.Key_Left) {
+                    root.moveQuickSelection(-1);
+                    event.accepted = true;
+                } else if (root.quickMode && e2.key === Qt.Key_Right) {
+                    root.moveQuickSelection(1);
+                    event.accepted = true;
+                } else if (root.quickMode && e2.key === Qt.Key_Up) {
+                    root.moveQuickSelection(-root.quickGridCols);
+                    event.accepted = true;
+                } else if (root.quickMode && e2.key === Qt.Key_Down) {
+                    root.moveQuickSelection(root.quickGridCols);
+                    event.accepted = true;
+                } else if (root.quickMode
+                           && (e2.key === Qt.Key_Tab && !(e2.modifiers & Qt.ShiftModifier))) {
+                    root.moveQuickSelection(1);
+                    event.accepted = true;
+                } else if (root.quickMode
+                           && (e2.key === Qt.Key_Backtab
+                               || (e2.key === Qt.Key_Tab && (e2.modifiers & Qt.ShiftModifier)))) {
+                    root.moveQuickSelection(-1);
+                    event.accepted = true;
+                } else if (e2.key === Qt.Key_Down
+                           || (e2.key === Qt.Key_Tab && !(e2.modifiers & Qt.ShiftModifier))) {
                     // Tab + Down step forward, Shift+Tab + Up step backward,
                     // both wrap. Paging clamps (see Key_PageDown). Matches
                     // launcher convention everywhere else.
                     root.moveSelection(1, true);
                     event.accepted = true;
-                } else if (event.key === Qt.Key_Up
-                           || event.key === Qt.Key_Backtab
-                           || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+                } else if (e2.key === Qt.Key_Up
+                           || e2.key === Qt.Key_Backtab
+                           || (e2.key === Qt.Key_Tab && (e2.modifiers & Qt.ShiftModifier))) {
                     root.moveSelection(-1, true);
                     event.accepted = true;
-                } else if (event.key === Qt.Key_PageDown) {
+                } else if (e2.key === Qt.Key_PageDown) {
                     root.moveSelection(8, false);
                     event.accepted = true;
-                } else if (event.key === Qt.Key_PageUp) {
+                } else if (e2.key === Qt.Key_PageUp) {
                     root.moveSelection(-8, false);
                     event.accepted = true;
-                } else if (event.key === Qt.Key_Home) {
+                } else if (e2.key === Qt.Key_Home) {
                     root.selectedIndex = 0;
                     resultList.positionViewAtIndex(0, ListView.Beginning);
                     event.accepted = true;
-                } else if (event.key === Qt.Key_End) {
+                } else if (e2.key === Qt.Key_End) {
                     root.selectedIndex = Math.max(0, root.filteredItems.length - 1);
                     resultList.positionViewAtIndex(root.selectedIndex, ListView.End);
                     event.accepted = true;
-                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    const it = root.filteredItems[root.selectedIndex];
-                    if (it) root.activate(it);
+                } else if (e2.key === Qt.Key_Return || e2.key === Qt.Key_Enter) {
+                    if (root.quickMode) {
+                        const t = root.filteredQuickTiles[root.selectedIndex];
+                        if (t) root.expandTile(t);
+                    } else {
+                        const it = root.filteredItems[root.selectedIndex];
+                        if (it) root.activate(it);
+                    }
                     event.accepted = true;
-                } else if (event.key === Qt.Key_Backspace) {
+                } else if (e2.key === Qt.Key_Backspace) {
                     // Backspace deletes a char first; once the query is
                     // empty it walks back up one level so the same key
                     // unwinds both the typed query and the breadcrumb.
                     if (root.query.length > 0) root.query = root.query.slice(0, -1);
                     else root.goUp();
                     event.accepted = true;
-                } else if (event.key === Qt.Key_S && (event.modifiers & Qt.ControlModifier)) {
+                } else if (e2.key === Qt.Key_S && (e2.modifiers & Qt.ControlModifier)) {
                     const it = root.filteredItems[root.selectedIndex];
                     if (it && !it.isCategory) bookmarks.toggleFavourite(it);
                     event.accepted = true;
-                } else if (event.text && event.text.length === 1) {
+                } else if (!root.quickMode && event.text && event.text.length === 1) {
                     const ch = event.text;
                     // Printable range; lets letters, digits, and spaces in,
-                    // keeps modifier-driven control codes out.
+                    // keeps modifier-driven control codes out. Skipped in
+                    // quickMode — there's no search field to feed.
                     if (ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127) {
                         root.query += ch;
                         root.selectedIndex = 0;
@@ -579,6 +855,11 @@ Item {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         text: {
+                            if (root.quickMode) {
+                                return root.expandedTile !== null
+                                    ? "HJKL / ↑↓←→  ·  TAB SECT  ·  ↵ APPLY  ·  ESC BACK"
+                                    : "HJKL / ↑↓←→  ·  ↵ OPEN  ·  ESC BACK";
+                            }
                             if (root.categoryFilter === "")
                                 return "↑↓ / TAB  ·  ↵ OPEN  ·  ^S STAR  ·  ESC CLOSE";
                             let verb = "RUN";
@@ -598,11 +879,282 @@ Item {
 
                 Rectangle { width: parent.width; height: 1; color: root.sep }
 
-                // No focus indicator on TextInput — the caret and the
-                // live count above act as the focus tell.
+                // ---------- Quick tiles (quickMode only) ----------
+                // Lives above the search field so the filter caption reads
+                // as "narrow this grid." Hidden in every other mode so the
+                // standard ListView keeps the prime real estate. Tile
+                // visuals are inline — kept simple so the file doesn't
+                // sprout a sibling QuickTile.qml again.
                 Item {
+                    id: quickGrid
+                    visible: root.quickMode
                     width: parent.width
-                    height: 34
+                    // Auto-size to content: 4-col grid of fixed-height tiles.
+                    readonly property int tileH: 86
+                    readonly property int spacing: 10
+                    readonly property int rows: visible
+                        ? Math.ceil(root.filteredQuickTiles.length / root.quickGridCols)
+                        : 0
+                    height: visible
+                        ? (rows * tileH + Math.max(0, rows - 1) * spacing)
+                        : 0
+
+                    Grid {
+                        anchors.fill: parent
+                        columns: root.quickGridCols
+                        rowSpacing: quickGrid.spacing
+                        columnSpacing: quickGrid.spacing
+
+                        Repeater {
+                            model: root.filteredQuickTiles
+                            delegate: Item {
+                                id: tileSlot
+                                required property var modelData
+                                required property int index
+                                readonly property bool selected: root.selectedIndex === index
+                                width: (quickGrid.width - (root.quickGridCols - 1) * quickGrid.spacing)
+                                       / root.quickGridCols
+                                height: quickGrid.tileH
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: root.cornerRadius
+                                    color: tileSlot.selected
+                                           ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                                           : tileMouse.containsMouse
+                                                ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.05)
+                                                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.03)
+                                    border.color: tileSlot.selected ? root.seal : root.sep
+                                    border.width: tileSlot.selected ? 2 : 1
+                                    Behavior on color        { ColorAnimation  { duration: 120 } }
+                                    Behavior on border.color { ColorAnimation  { duration: 120 } }
+                                    Behavior on border.width { NumberAnimation { duration: 120 } }
+                                }
+
+                                Column {
+                                    anchors.fill: parent
+                                    anchors.margins: 8
+                                    spacing: 3
+
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: tileSlot.modelData.glyph
+                                        color: tileSlot.modelData.tone
+                                        font.family: root.mono
+                                        font.pixelSize: 20
+                                    }
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
+                                        text: tileSlot.modelData.label
+                                        color: root.ink
+                                        font.family: root.mono
+                                        font.pixelSize: 9
+                                        font.letterSpacing: 1.4
+                                        font.weight: Font.Medium
+                                    }
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
+                                        text: tileSlot.modelData.sub
+                                        color: root.inkDeep
+                                        font.family: root.mono
+                                        font.pixelSize: 8
+                                        font.letterSpacing: 1
+                                        opacity: 0.85
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: tileMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                    onPositionChanged: root.selectedIndex = tileSlot.index
+                                    onClicked: (e) => {
+                                        root.selectedIndex = tileSlot.index;
+                                        if (e.button === Qt.RightButton) {
+                                            // Right-click still runs the long action
+                                            // (mute toggle, refresh, reset) without
+                                            // opening the detail panel.
+                                            root.longQuickTile(tileSlot.modelData);
+                                        } else {
+                                            root.expandTile(tileSlot.modelData);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Slim separator above the expanded detail panel — only
+                // visible when there's a panel to introduce.
+                Rectangle {
+                    visible: root.quickMode && root.expandedTile !== null
+                    width: parent.width
+                    height: 1
+                    color: root.sep
+                }
+
+                // ---------- Quick tile detail panel ----------
+                // Drops below the tile grid when a tile is clicked. Each
+                // tile gets a small adjustment surface here — sliders for
+                // audio + display, action buttons for everything else.
+                // The whole panel collapses to height 0 when no tile is
+                // expanded so the card auto-shrinks back to its grid-only
+                // footprint.
+                Item {
+                    id: detailPanel
+                    width: parent.width
+                    visible: root.quickMode && root.expandedTile !== null
+                    height: visible ? detailCol.implicitHeight + 12 : 0
+                    Behavior on height {
+                        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                    }
+
+                    readonly property var t: root.expandedTile
+                    readonly property string tKey: t ? t.key : ""
+                    // Capture the OmniMenu root under a non-conflicting
+                    // name. Inside the Component children below, an
+                    // expression like `root: root` would self-bind to the
+                    // body's own `root` property (still undefined at the
+                    // moment of evaluation) rather than reach the outer
+                    // id. `omni` lets us reference the OmniMenu root
+                    // unambiguously from within those Component templates.
+                    readonly property var omni: root
+
+                    // Per-tile body Components — instantiated by the
+                    // Loader below based on `tKey`. Each body owns its
+                    // own controls (sliders, lists) and may emit `close`
+                    // to dismiss OmniMenu after an action that takes
+                    // focus away.
+                    Component { id: batteryBodyComp;     QuickBatteryBody     { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: audioBodyComp;       QuickAudioBody       { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: wifiBodyComp;        QuickWifiBody        { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: btBodyComp;          QuickBluetoothBody   { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: weatherBodyComp;     QuickWeatherBody     { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: displayBodyComp;     QuickDisplayBody     { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: aetherBodyComp;      QuickAetherBody      { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: cpuBodyComp;         QuickCpuBody         { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: calendarBodyComp;    QuickCalendarBody    { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: screenshotsBodyComp; QuickScreenshotsBody { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: videosBodyComp;      QuickVideosBody      { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+                    Component { id: powerBodyComp;       QuickPowerBody       { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+
+                    Column {
+                        id: detailCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: 6
+                        spacing: 10
+
+                        // Header: big glyph + label + live state line + close.
+                        RowLayout {
+                            width: parent.width
+                            spacing: 12
+                            Text {
+                                text: detailPanel.t ? detailPanel.t.glyph : ""
+                                color: detailPanel.t ? detailPanel.t.tone : root.ink
+                                font.family: root.mono
+                                font.pixelSize: 26
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                            Column {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                Text {
+                                    text: detailPanel.t ? detailPanel.t.label : ""
+                                    color: root.ink
+                                    font.family: root.mono
+                                    font.pixelSize: 13
+                                    font.letterSpacing: 2
+                                    font.weight: Font.Medium
+                                }
+                                Text {
+                                    text: detailPanel.t ? detailPanel.t.sub : ""
+                                    color: root.inkDeep
+                                    font.family: root.mono
+                                    font.pixelSize: 10
+                                    font.letterSpacing: 1
+                                    opacity: 0.85
+                                }
+                            }
+                            Rectangle {
+                                Layout.alignment: Qt.AlignVCenter
+                                width: 22; height: 22; radius: 11
+                                color: closeMouse.containsMouse
+                                       ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                                       : "transparent"
+                                border.color: root.sep
+                                border.width: 1
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "×"
+                                    color: root.inkDeep
+                                    font.family: root.mono
+                                    font.pixelSize: 14
+                                }
+                                MouseArea {
+                                    id: closeMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.collapseTile()
+                                }
+                            }
+                        }
+
+                        // ---- Per-tile body ----
+                        // The Loader instantiates the right Quick*Body
+                        // file for the expanded tile. Bodies own their
+                        // own probes, controls, and lists; they're fully
+                        // self-contained (no shell-out to omarchy
+                        // launchers — except CPU's btop, which is a TUI).
+                        Loader {
+                            id: bodyLoader
+                            width: parent.width
+                            active: detailPanel.visible
+                            sourceComponent: {
+                                switch (detailPanel.tKey) {
+                                    case "battery":     return batteryBodyComp;
+                                    case "audio":       return audioBodyComp;
+                                    case "network":     return wifiBodyComp;
+                                    case "bluetooth":   return btBodyComp;
+                                    case "weather":     return weatherBodyComp;
+                                    case "display":     return displayBodyComp;
+                                    case "aether":      return aetherBodyComp;
+                                    case "cpu":         return cpuBodyComp;
+                                    case "calendar":    return calendarBodyComp;
+                                    case "screenshots": return screenshotsBodyComp;
+                                    case "videos":      return videosBodyComp;
+                                    case "power":       return powerBodyComp;
+                                }
+                                return null;
+                            }
+                            onLoaded: {
+                                if (item && item.close)
+                                    item.close.connect(function() { root.close(); });
+                            }
+                        }
+                    }
+                }
+
+                // No focus indicator on TextInput — the caret and the
+                // live count above act as the focus tell. Hidden entirely
+                // in quickMode where the tile grid is the only surface
+                // the user interacts with (filtering removed per UX call).
+                Item {
+                    visible: !root.quickMode
+                    width: parent.width
+                    height: visible ? 34 : 0
 
                     Text {
                         id: searchPrompt
@@ -658,7 +1210,12 @@ Item {
                     }
                 }
 
-                Rectangle { width: parent.width; height: 1; color: root.sep }
+                Rectangle {
+                    visible: !root.quickMode
+                    width: parent.width
+                    height: 1
+                    color: root.sep
+                }
 
                 // Fixed row height in the delegate keeps positionViewAtIndex
                 // honest under fast keyboard navigation; the wrapping Item's
@@ -666,8 +1223,11 @@ Item {
                 // hairline mid-scroll.
                 Item {
                     id: listArea
+                    visible: !root.quickMode
                     width: parent.width
-                    height: Math.max(60, card.height - 34 - 43 - 34 - 22 - 12 * 5)
+                    height: visible
+                        ? Math.max(60, card.height - 34 - 43 - 34 - 22 - 12 * 5)
+                        : 0
                     clip: true
 
                     // In file mode the list shrinks to ~44% of the card so

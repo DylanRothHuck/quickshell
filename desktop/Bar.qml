@@ -16,17 +16,52 @@ PanelWindow {
         left:   bar.root.barEdge !== "right"
         right:  bar.root.barEdge !== "left"
     }
-    implicitHeight: bar.root.isHorizontal ? bar.root.barHeight : 0
+    // Cloud mode: horizontal+round only. Vertical bars keep the original
+    // slab geometry to avoid breaking the proven layout.
+    readonly property int cloudPad: 2
+    readonly property int cloudAir: 5
+    readonly property int cloudInnerAir: 2
+    readonly property bool cloudMode: bar.root.round && bar.root.isHorizontal
+    readonly property int extraThickness: cloudMode ? 2 * cloudPad + cloudAir + cloudInnerAir : 0
+    // innerSign tells which side gets the extra outer air (away from screen).
+    readonly property int innerSign: bar.root.barEdge === "top" ? 1 : (bar.root.barEdge === "bottom" ? -1 : 0)
+
+    implicitHeight: bar.root.isHorizontal ? bar.root.barHeight + extraThickness : 0
     implicitWidth:  bar.root.isHorizontal ? 0 : bar.root.barHeight
-    exclusiveZone:  bar.root.barHeight
+    exclusiveZone:  bar.root.isHorizontal ? bar.root.barHeight + extraThickness : bar.root.barHeight
 
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "omarchy-menu"
 
+    // In cloud mode the slab bg is replaced by a single rounded backdrop
+    // sized to match the inner bar (barHeight tall, with cloudAir margins
+    // on each side along the bar axis, sliding toward the inner edge so
+    // outer-side air sits between cloud and screen edge).
     Rectangle {
-        anchors.fill: parent
+        visible: bar.cloudMode
+        x: bar.cloudAir
+        y: bar.innerSign === 1 ? bar.cloudAir : bar.cloudInnerAir
+        width: parent.width - 2 * bar.cloudAir
+        height: bar.root.barHeight + 2 * bar.cloudPad
+        radius: bar.root.cornerRadius
         color: bar.root.bg
         opacity: bar.root.isIdle ? 0.7 : 1.0
+        Behavior on opacity {
+            NumberAnimation {
+                duration: bar.root.isIdle ? 6000 : 60
+                easing.type: bar.root.isIdle ? Easing.OutQuart : Easing.OutQuad
+            }
+        }
+        z: 0
+    }
+
+    // Container for clock + modules + hairlines. In cloud mode the bg
+    // becomes transparent so the cloud rectangle above shows through;
+    // in slab mode this acts as the bar background.
+    Rectangle {
+        anchors.fill: parent
+        color: bar.cloudMode ? "transparent" : bar.root.bg
+        opacity: bar.cloudMode ? 1.0 : (bar.root.isIdle ? 0.7 : 1.0)
         Behavior on opacity {
             NumberAnimation {
                 duration: bar.root.isIdle ? 6000 : 60
@@ -36,6 +71,7 @@ PanelWindow {
 
         // 静 (stillness) mark, parked in the bar's trailing corner.
         Text {
+            visible: !bar.cloudMode
             anchors.right:  bar.root.isHorizontal ? parent.right  : undefined
             anchors.bottom: bar.root.isHorizontal ? undefined     : parent.bottom
             anchors.rightMargin:  bar.root.isHorizontal ? 8 : 0
@@ -50,9 +86,10 @@ PanelWindow {
             z: 0
         }
 
-        // Inner-edge hairline (facing the rest of the screen).
+        // Inner-edge hairline (facing the rest of the screen). Hidden in
+        // cloud mode — the rounded backdrop replaces it visually.
         Rectangle {
-            visible: bar.root.isHorizontal
+            visible: !bar.cloudMode && bar.root.isHorizontal
             anchors.left:   parent.left
             anchors.right:  parent.right
             anchors.top:    bar.root.barEdge === "bottom" ? parent.top    : undefined
@@ -61,7 +98,7 @@ PanelWindow {
             color: bar.root.sep
         }
         Rectangle {
-            visible: !bar.root.isHorizontal
+            visible: !bar.cloudMode && !bar.root.isHorizontal
             anchors.top:    parent.top
             anchors.bottom: parent.bottom
             anchors.right:  bar.root.barEdge === "left"  ? parent.right : undefined
@@ -154,10 +191,18 @@ PanelWindow {
 
         GridLayout {
             anchors.fill: parent
-            anchors.leftMargin:   bar.root.isHorizontal ? 10 : 0
-            anchors.rightMargin:  bar.root.isHorizontal ? 10 : 0
-            anchors.topMargin:    bar.root.isHorizontal ? 0  : 10
-            anchors.bottomMargin: bar.root.isHorizontal ? 0  : 10
+            anchors.leftMargin:   bar.root.isHorizontal ? (bar.cloudMode ? bar.cloudAir + bar.cloudPad : 10) : 0
+            anchors.rightMargin:  bar.root.isHorizontal ? (bar.cloudMode ? bar.cloudAir + bar.cloudPad : 10) : 0
+            anchors.topMargin:    bar.root.isHorizontal
+                                  ? (bar.cloudMode
+                                     ? (bar.root.barEdge === "top" ? bar.cloudAir + bar.cloudPad : bar.cloudInnerAir + bar.cloudPad)
+                                     : 0)
+                                  : 10
+            anchors.bottomMargin: bar.root.isHorizontal
+                                  ? (bar.cloudMode
+                                     ? (bar.root.barEdge === "top" ? bar.cloudInnerAir + bar.cloudPad : bar.cloudAir + bar.cloudPad)
+                                     : 0)
+                                  : 10
             flow: bar.root.isHorizontal ? GridLayout.LeftToRight : GridLayout.TopToBottom
             rowSpacing: 4
             columnSpacing: 4
@@ -221,62 +266,9 @@ PanelWindow {
                 onRightActivated: bar.root.refreshWeather()
             }
 
-            Module {
-                root: bar.root
-                // Nerd Font mdi-palette (U+F03D8). Left-click opens a
-                // quick-handle popup (blueprint picker + GUI escape
-                // hatch); right-click regenerates the system theme from
-                // a random local wallpaper via the CLI.
-                glyph: bar.root.icoAether
-                tooltip: "Aether"
-                onActivated: {
-                    if (bar.root.aetherVisible) bar.root.aetherVisible = false;
-                    else bar.root.openAether();
-                }
-                onRightActivated: bar.root.run("sh -c 'aether --generate \"$(aether --random-wallpaper)\"'")
-            }
-
-            Module {
-                id: displayMod
-                root: bar.root
-                Component.onCompleted: bar.root.displayAnchorItem = displayMod
-                // Nerd Font mdi-monitor (U+F0379). Left-click opens the
-                // display popup (warmth / brightness / gamma / monitor
-                // tweaks); right-click jumps straight to a reset.
-                glyph: bar.root.icoDisplay
-                tooltip: "Display"
-                color: (bar.root.warmthK < 6500 || bar.root.gammaPct !== 100 || bar.root.brightnessPct < 100)
-                       ? bar.root.seal : bar.root.ink
-                onActivated: {
-                    if (bar.root.displayVisible) bar.root.displayVisible = false;
-                    else bar.root.openDisplay();
-                }
-                onRightActivated: bar.root.resetDisplay()
-            }
-
-            Module {
-                root: bar.root
-                // Nerd Font mdi-camera (U+F0100). Left-click browses
-                // recent shots; right-click triggers a fresh capture.
-                glyph: bar.root.icoCamera
-                tooltip: "Screenshots"
-                onActivated: {
-                    if (bar.root.screenshotsVisible) bar.root.screenshotsVisible = false;
-                    else bar.root.openScreenshots();
-                }
-                onRightActivated: bar.root.run("omarchy-capture-screenshot")
-            }
-
-            Module {
-                root: bar.root
-                glyph: bar.root.icoFilm
-                tooltip: "Videos"
-                onActivated: {
-                    if (bar.root.videosVisible) bar.root.videosVisible = false;
-                    else bar.root.openVideos();
-                }
-                onRightActivated: bar.root.run("xdg-open " + JSON.stringify(Quickshell.env("HOME") + "/Videos"))
-            }
+            // Aether / Display / Screenshots / Videos moved into the
+            // OmniMenu Quick panel (Alt+Space). The bar keeps only the
+            // always-glanced status indicators on the right.
 
             Separator { root: bar.root }
 

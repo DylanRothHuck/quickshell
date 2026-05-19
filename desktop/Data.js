@@ -65,6 +65,7 @@ const fileIcons = {
 // "App" is the bucket all .desktop entries land in. fileCategory and
 // ghCategory route to their respective search drills.
 const categoryNav = [
+    { title: "Quick",   icon: "󱎫", category: "Browse", isCategory: true, target: "Quick",       keywords: "quick settings panel tray toggle popup display weather calendar aether screenshots videos brightness volume mute" },
     { title: "Apps",    icon: "󰀻", category: "Browse", isCategory: true, target: "App",         keywords: "apps applications launcher programs software desktop" },
     { title: "Files",   icon: "󰉋", category: "Browse", isCategory: true, target: fileCategory,  keywords: "files file search find folder browse path open image picture document text fd" },
     { title: "GitHub",  icon: "󰊤", category: "Browse", isCategory: true, target: ghCategory,    keywords: "github gh repo repository search code clone star issue pull request pr open source git" },
@@ -90,12 +91,33 @@ const categoryNav = [
 // verbatim; `tui` (when set) is the wrapper command name that prefixes
 // exec so the launch lands in a real terminal.
 const omarchyItems = [
+    // ----- Quick -----
+    // Mirrors the standalone QuickSettings sheet's targets: popup togglers
+    // and one-shot device toggles. Reached as a drill-down (Quick) or by
+    // typing the action name; Alt+Space binds straight into this category.
+    { title: "Display",          icon: "󰍹", category: "Quick", keywords: "display monitor brightness warmth gamma night light blue temperature dim screen",       exec: "qs -c desktop ipc call display toggle" },
+    { title: "Weather",          icon: "󰖐", category: "Quick", keywords: "weather forecast temperature wttr rain sun wind humidity uv sunrise sunset outdoor",    exec: "qs -c desktop ipc call weather toggle" },
+    { title: "Calendar",         icon: "󰃭", category: "Quick", keywords: "calendar date month day today schedule planner agenda holidays",                       exec: "qs -c desktop ipc call calendar toggle" },
+    { title: "Aether Themes",    icon: "󰏘", category: "Quick", keywords: "aether theme blueprint palette swatch picker wallpaper generate",                      exec: "qs -c desktop ipc call aether toggle" },
+    { title: "Screenshots",      icon: "󰄀", category: "Quick", keywords: "screenshots shots browse pictures captures images recent gallery",                      exec: "qs -c desktop ipc call screenshots toggle" },
+    { title: "Videos",           icon: "󰟞", category: "Quick", keywords: "videos films clips recordings recent browse gallery library",                          exec: "qs -c desktop ipc call videos toggle" },
+    { title: "Mute Audio",       icon: "󰝟", category: "Quick", keywords: "mute audio unmute silence toggle volume sound speaker pamixer quick",                  exec: "pamixer -t" },
+    { title: "Reset Display",    icon: "󰜉", category: "Quick", keywords: "reset display brightness warmth gamma default daylight identity full restore",          exec: "qs -c desktop ipc call display reset" },
+    { title: "Blank Screen",     icon: "󰹐", category: "Quick", keywords: "blank screen off dpms suspend display monitor sleep dark",                              exec: "qs -c desktop ipc call display blank" },
+    { title: "Refresh Weather",  icon: "󰜉", category: "Quick", keywords: "weather refresh reload update wttr fetch",                                              exec: "qs -c desktop ipc call weather refresh" },
+    { title: "Audio Mixer",      icon: "󰕾", category: "Quick", keywords: "audio mixer pavucontrol pipewire pulse volume sink source device level",                exec: "omarchy-launch-audio" },
+    { title: "Wi-Fi Picker",     icon: "󰖩", category: "Quick", keywords: "wifi wireless network connect picker chooser ssid signal nmcli",                       exec: "omarchy-launch-wifi" },
+    { title: "Bluetooth Picker", icon: "󰂯", category: "Quick", keywords: "bluetooth bt pair connect device picker headset speaker keyboard mouse",                exec: "omarchy-launch-bluetooth" },
+    { title: "System Monitor",   icon: "󰍛", category: "Quick", keywords: "cpu memory process monitor btop top htop performance load activity",                   exec: "omarchy-launch-or-focus-tui btop" },
+    { title: "Power Menu",       icon: "󰐥", category: "Quick", keywords: "power menu battery suspend hibernate logout restart reboot shutdown lock",              exec: "omarchy-menu power" },
+
     // ----- Style -----
     { title: "Theme",            icon: "󰸌", category: "Style",   keywords: "theme color palette dark light mode appearance look style scheme switcher kanagawa tokyo dragon nord gruvbox", exec: "omarchy-menu theme" },
     { title: "Background",       icon: "󰸉", category: "Style",   keywords: "background wallpaper image desktop picture backdrop bg",                                                 exec: "omarchy-menu background" },
     { title: "Font",             icon: "󰛖", category: "Style",   keywords: "font typeface monospace typography family character glyph nerd",                                        exec: "omarchy-menu style" },
     { title: "Waybar Position",  icon: "󰍜", category: "Style",   keywords: "bar panel top bottom left right position dock waybar status",                                          exec: "omarchy-menu style" },
-    { title: "Corners",          icon: "󰘇", category: "Style",   keywords: "corners radius round sharp border edge shape window",                                                  exec: "omarchy-menu style" },
+    { title: "Round Corners",    icon: "󰘇", category: "Style",   keywords: "corners radius round soft rounded border edge shape navbar cloud popup",                              exec: "qs -c desktop ipc call corners round" },
+    { title: "Sharp Corners",    icon: "󰝣", category: "Style",   keywords: "corners radius sharp square hard flat border edge shape navbar slab popup",                            exec: "qs -c desktop ipc call corners sharp" },
     { title: "Hyprland Look",    icon: "󰕮", category: "Style",   keywords: "hyprland looknfeel border gaps animation effects compositor window",                                   exec: "omarchy-launch-editor ~/.config/hypr/looknfeel.lua" },
     { title: "Screensaver",      icon: "󱄄", category: "Style",   keywords: "screensaver branding lock idle screen saver text image logo",                                        exec: "omarchy-menu style" },
     { title: "About",            icon: "󰋽", category: "Style",   keywords: "about branding logo profile text image owner identity",                                                exec: "omarchy-menu about" },
