@@ -10,10 +10,9 @@ CardWindow {
     layerNamespace: "omarchy-weather"
     footer: "CLICK PLACE TO EDIT · R REFRESH · ESC"
 
-    anchorEdge:    weatherPopup.root.barEdge
-    anchorBarSize: weatherPopup.root.barHeight
-    anchorBarX:    weatherPopup.root.popupAnchorX
-    anchorBarY:    weatherPopup.root.popupAnchorY
+    anchorEdge: weatherPopup.root.barEdge
+    anchorBarX: weatherPopup.root.popupAnchorX
+    anchorBarY: weatherPopup.root.popupAnchorY
 
     onDismiss: weatherPopup.root.weatherVisible = false
     onKeyPressed: function(event) {

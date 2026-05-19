@@ -11,10 +11,9 @@ CardWindow {
     title: calendarPopup.root.calendarMonthName
     subtitle: calendarPopup.root.calendarYear
 
-    anchorEdge:    calendarPopup.root.barEdge
-    anchorBarSize: calendarPopup.root.barHeight
-    anchorBarX:    calendarPopup.root.popupAnchorX
-    anchorBarY:    calendarPopup.root.popupAnchorY
+    anchorEdge: calendarPopup.root.barEdge
+    anchorBarX: calendarPopup.root.popupAnchorX
+    anchorBarY: calendarPopup.root.popupAnchorY
 
     headerRight: Row {
         spacing: 12

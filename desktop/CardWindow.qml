@@ -37,19 +37,15 @@ PanelWindow {
     // means ids declared in the popup file are reachable from inside.
     property Component headerRight: null
 
-    // Anchored placement. When anchorEdge is "" (default), the card centers
-    // on screen with a scale-from-center reveal — the original tier-B
-    // behaviour. When anchorEdge matches the bar's edge ("top"/"bottom"/
-    // "left"/"right"), the card hugs the bar's inner edge and centres on
-    // (anchorBarX, anchorBarY) along the parallel axis, clamped to stay
-    // on screen. The Scale transform's origin tracks the trigger so the
-    // reveal grows out of the bar icon rather than the card's centroid.
+    // Anchored placement. anchorEdge "" (default) centres the card; "top"/
+    // "bottom"/"left"/"right" hugs the bar's inner edge and centres on
+    // (anchorBarX, anchorBarY) along the parallel axis, clamped on-screen.
+    // The Scale origin tracks the trigger so a clamped card still feels
+    // rooted in the icon the user clicked.
     property string anchorEdge: ""
     property real   anchorBarX: 0
     property real   anchorBarY: 0
-    property real   anchorBarSize: 0
     property real   anchorGap: 8
-    property real   anchorEdgeMargin: 8
     readonly property bool _anchored: anchorEdge === "top"  || anchorEdge === "bottom"
                                    || anchorEdge === "left" || anchorEdge === "right"
 
@@ -88,32 +84,23 @@ PanelWindow {
         border.width: 1
         radius: 0
 
-        // Position. Centered (the default) keeps the original "modal card"
-        // feel; anchored placement hugs the bar's inner edge with a small
-        // gap and centres on the trigger along the parallel axis (clamped
-        // to keep the card on-screen).
         x: {
             if (!card._anchored) return (parent.width - width) / 2;
-            if (card.anchorEdge === "left")  return card.anchorBarSize + card.anchorGap;
-            if (card.anchorEdge === "right") return parent.width - card.anchorBarSize - width - card.anchorGap;
-            return Math.max(card.anchorEdgeMargin,
-                            Math.min(parent.width - width - card.anchorEdgeMargin,
+            if (card.anchorEdge === "left")  return card.theme.barHeight + card.anchorGap;
+            if (card.anchorEdge === "right") return parent.width - card.theme.barHeight - width - card.anchorGap;
+            return Math.max(card.anchorGap,
+                            Math.min(parent.width - width - card.anchorGap,
                                      card.anchorBarX - width / 2));
         }
         y: {
             if (!card._anchored) return (parent.height - height) / 2;
-            if (card.anchorEdge === "top")    return card.anchorBarSize + card.anchorGap;
-            if (card.anchorEdge === "bottom") return parent.height - card.anchorBarSize - height - card.anchorGap;
-            return Math.max(card.anchorEdgeMargin,
-                            Math.min(parent.height - height - card.anchorEdgeMargin,
+            if (card.anchorEdge === "top")    return card.theme.barHeight + card.anchorGap;
+            if (card.anchorEdge === "bottom") return parent.height - card.theme.barHeight - height - card.anchorGap;
+            return Math.max(card.anchorGap,
+                            Math.min(parent.height - height - card.anchorGap,
                                      card.anchorBarY - height / 2));
         }
 
-        // Reveal animation. Centered: scale grows from the geometric
-        // centre. Anchored: scale grows out of the bar edge at the
-        // trigger's projected position, so even when the card is clamped
-        // against a screen edge the visual still feels rooted in the
-        // icon the user clicked.
         transform: Scale {
             origin.x: {
                 if (!card._anchored) return surface.width / 2;

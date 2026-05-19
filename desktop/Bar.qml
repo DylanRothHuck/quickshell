@@ -145,8 +145,7 @@ PanelWindow {
                 onClicked: {
                     clockTipDelay.stop();
                     bar.root.hideTooltip("Calendar");
-                    const p = clockItem.mapToItem(null, clockItem.width / 2, clockItem.height / 2);
-                    bar.root.setPopupAnchor(p.x, p.y);
+                    bar.root.anchorPopupTo(clockItem);
                     if (bar.root.calendarVisible) bar.root.calendarVisible = false;
                     else bar.root.openCalendar();
                 }
