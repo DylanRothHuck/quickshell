@@ -10,6 +10,19 @@ CardWindow {
     layerNamespace: "omarchy-display"
     footer: "↑↓ ROW · ←→ ADJUST · 1-4 PRESET · R RESET · B BLANK · E EDIT · ESC"
 
+    title: "DISPLAY"
+    subtitle: Math.round(displayPopup.root.warmthK) + "K  ·  BR " + displayPopup.root.brightnessPct
+              + "  ·  γ " + Math.round(displayPopup.root.gammaPct)
+              + "  ·  " + displayPopup.root.monitorRate.toFixed(0) + "HZ"
+
+    headerRight: CalendarChevron {
+        root: displayPopup.root
+        text: displayPopup.root.icoRefresh
+        restColor: displayPopup.root.inkDeep
+        font.pixelSize: 22
+        onTriggered: displayPopup.root.resetDisplay()
+    }
+
     onDismiss: displayPopup.root.displayVisible = false
     onKeyPressed: function(event) {
         const r = displayPopup.root;
@@ -66,51 +79,6 @@ CardWindow {
         id: dispCol
         width: parent.width
         spacing: 12
-
-        Item {
-            width: parent.width
-            height: 43
-
-            Column {
-                anchors.left: parent.left
-                anchors.right: displayReset.left
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-                Text {
-                    text: "DISPLAY"
-                    color: displayPopup.root.ink
-                    font.family: displayPopup.root.mono
-                    font.pixelSize: 19
-                    font.letterSpacing: 4
-                    font.weight: Font.Medium
-                }
-                Text {
-                    width: parent.width
-                    elide: Text.ElideRight
-                    text: Math.round(displayPopup.root.warmthK) + "K  ·  BR " + displayPopup.root.brightnessPct
-                          + "  ·  γ " + Math.round(displayPopup.root.gammaPct)
-                          + "  ·  " + displayPopup.root.monitorRate.toFixed(0) + "HZ"
-                    color: displayPopup.root.inkDeep
-                    font.family: displayPopup.root.mono
-                    font.pixelSize: 11
-                    font.letterSpacing: 2
-                }
-            }
-
-            CalendarChevron {
-                id: displayReset
-                root: displayPopup.root
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                text: displayPopup.root.icoRefresh
-                restColor: displayPopup.root.inkDeep
-                font.pixelSize: 22
-                onTriggered: displayPopup.root.resetDisplay()
-            }
-        }
-
-        Rectangle { width: parent.width; height: 1; color: displayPopup.root.sep }
 
         Repeater {
             model: [

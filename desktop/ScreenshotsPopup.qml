@@ -8,6 +8,44 @@ CardWindow {
     revealed: root.screenshotsVisible
     cardWidth: 566
     layerNamespace: "omarchy-screenshots"
+    title: "SCREENSHOTS"
+    subtitle: screenshotsPopup.root.screenshotFiles.length === 0
+              ? "NO RECENT CAPTURES"
+              : "PAGE " + (screenshotsPopup.root.screenshotPage + 1) + " / " + screenshotsPopup.root.screenshotPageCount
+                + "  ·  " + screenshotsPopup.root.screenshotFiles.length + " TOTAL"
+
+    headerRight: Row {
+        spacing: 12
+        CalendarChevron {
+            root: screenshotsPopup.root
+            text: "‹"
+            opacity: screenshotsPopup.root.screenshotPage > 0 ? 1.0 : 0.3
+            onTriggered: {
+                if (screenshotsPopup.root.screenshotPage > 0) {
+                    screenshotsPopup.root.screenshotPage--;
+                    screenshotsPopup.root.selectedScreenshot = 0;
+                }
+            }
+        }
+        CalendarChevron {
+            root: screenshotsPopup.root
+            text: screenshotsPopup.root.icoRefresh
+            restColor: screenshotsPopup.root.inkDeep
+            font.pixelSize: 24
+            onTriggered: screenshotsPopup.root.refreshScreenshots()
+        }
+        CalendarChevron {
+            root: screenshotsPopup.root
+            text: "›"
+            opacity: screenshotsPopup.root.screenshotPage < screenshotsPopup.root.screenshotPageCount - 1 ? 1.0 : 0.3
+            onTriggered: {
+                if (screenshotsPopup.root.screenshotPage < screenshotsPopup.root.screenshotPageCount - 1) {
+                    screenshotsPopup.root.screenshotPage++;
+                    screenshotsPopup.root.selectedScreenshot = 0;
+                }
+            }
+        }
+    }
 
     onDismiss: screenshotsPopup.root.screenshotsVisible = false
     onKeyPressed: function(event) {
@@ -46,78 +84,6 @@ CardWindow {
         id: shotCol
         width: parent.width
         spacing: 12
-
-        Item {
-            width: parent.width
-            height: 43
-
-            Column {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-
-                Text {
-                    text: "SCREENSHOTS"
-                    color: screenshotsPopup.root.ink
-                    font.family: screenshotsPopup.root.mono
-                    font.pixelSize: 19
-                    font.letterSpacing: 4
-                    font.weight: Font.Medium
-                }
-                Text {
-                    text: screenshotsPopup.root.screenshotFiles.length === 0
-                          ? "NO RECENT CAPTURES"
-                          : "PAGE " + (screenshotsPopup.root.screenshotPage + 1) + " / " + screenshotsPopup.root.screenshotPageCount
-                            + "  ·  " + screenshotsPopup.root.screenshotFiles.length + " TOTAL"
-                    color: screenshotsPopup.root.inkDeep
-                    font.family: screenshotsPopup.root.mono
-                    font.pixelSize: 11
-                    font.letterSpacing: 2
-                }
-            }
-
-            Row {
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 12
-
-                CalendarChevron {
-                    root: screenshotsPopup.root
-                    text: "‹"
-                    opacity: screenshotsPopup.root.screenshotPage > 0 ? 1.0 : 0.3
-                    onTriggered: {
-                        if (screenshotsPopup.root.screenshotPage > 0) {
-                            screenshotsPopup.root.screenshotPage--;
-                            screenshotsPopup.root.selectedScreenshot = 0;
-                        }
-                    }
-                }
-                CalendarChevron {
-                    root: screenshotsPopup.root
-                    text: screenshotsPopup.root.icoRefresh
-                    restColor: screenshotsPopup.root.inkDeep
-                    font.pixelSize: 24
-                    onTriggered: screenshotsPopup.root.refreshScreenshots()
-                }
-                CalendarChevron {
-                    root: screenshotsPopup.root
-                    text: "›"
-                    opacity: screenshotsPopup.root.screenshotPage < screenshotsPopup.root.screenshotPageCount - 1 ? 1.0 : 0.3
-                    onTriggered: {
-                        if (screenshotsPopup.root.screenshotPage < screenshotsPopup.root.screenshotPageCount - 1) {
-                            screenshotsPopup.root.screenshotPage++;
-                            screenshotsPopup.root.selectedScreenshot = 0;
-                        }
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            width: parent.width
-            height: 1
-            color: screenshotsPopup.root.sep
-        }
 
         Text {
             width: parent.width

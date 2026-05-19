@@ -32,6 +32,10 @@ PanelWindow {
     property string subtitle: ""
     property string footer: ""
     property string layerNamespace: "omarchy-card"
+    // Right-side header content (chevrons, refresh buttons, etc.). The
+    // inline Component is instantiated as a Loader child; lexical scope
+    // means ids declared in the popup file are reachable from inside.
+    property Component headerRight: null
 
     signal dismiss()
     signal keyPressed(var event)
@@ -93,10 +97,12 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 43
-                visible: card.title.length > 0 || card.subtitle.length > 0
+                visible: card.title.length > 0 || card.subtitle.length > 0 || card.headerRight !== null
 
                 Column {
                     anchors.left: parent.left
+                    anchors.right: headerRightLoader.left
+                    anchors.rightMargin: card.headerRight ? 12 : 0
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
                     Text {
@@ -110,12 +116,21 @@ PanelWindow {
                     }
                     Text {
                         visible: card.subtitle.length > 0
+                        width: parent.width
+                        elide: Text.ElideRight
                         text: card.subtitle
                         color: card.theme.inkDeep
                         font.family: card.theme.mono
                         font.pixelSize: 11
                         font.letterSpacing: 2
                     }
+                }
+
+                Loader {
+                    id: headerRightLoader
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    sourceComponent: card.headerRight
                 }
             }
 

@@ -8,6 +8,44 @@ CardWindow {
     revealed: root.videosVisible
     cardWidth: 566
     layerNamespace: "omarchy-videos"
+    title: "VIDEOS"
+    subtitle: videosPopup.root.videoFiles.length === 0
+              ? "NO RECENT VIDEOS"
+              : "PAGE " + (videosPopup.root.videoPage + 1) + " / " + videosPopup.root.videoPageCount
+                + "  ·  " + videosPopup.root.videoFiles.length + " TOTAL"
+
+    headerRight: Row {
+        spacing: 12
+        CalendarChevron {
+            root: videosPopup.root
+            text: "‹"
+            opacity: videosPopup.root.videoPage > 0 ? 1.0 : 0.3
+            onTriggered: {
+                if (videosPopup.root.videoPage > 0) {
+                    videosPopup.root.videoPage--;
+                    videosPopup.root.selectedVideo = 0;
+                }
+            }
+        }
+        CalendarChevron {
+            root: videosPopup.root
+            text: videosPopup.root.icoRefresh
+            restColor: videosPopup.root.inkDeep
+            font.pixelSize: 24
+            onTriggered: videosPopup.root.refreshVideos()
+        }
+        CalendarChevron {
+            root: videosPopup.root
+            text: "›"
+            opacity: videosPopup.root.videoPage < videosPopup.root.videoPageCount - 1 ? 1.0 : 0.3
+            onTriggered: {
+                if (videosPopup.root.videoPage < videosPopup.root.videoPageCount - 1) {
+                    videosPopup.root.videoPage++;
+                    videosPopup.root.selectedVideo = 0;
+                }
+            }
+        }
+    }
 
     onDismiss: videosPopup.root.videosVisible = false
     onKeyPressed: function(event) {
@@ -49,78 +87,6 @@ CardWindow {
         id: vidCol
         width: parent.width
         spacing: 12
-
-        Item {
-            width: parent.width
-            height: 43
-
-            Column {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-
-                Text {
-                    text: "VIDEOS"
-                    color: videosPopup.root.ink
-                    font.family: videosPopup.root.mono
-                    font.pixelSize: 19
-                    font.letterSpacing: 4
-                    font.weight: Font.Medium
-                }
-                Text {
-                    text: videosPopup.root.videoFiles.length === 0
-                          ? "NO RECENT VIDEOS"
-                          : "PAGE " + (videosPopup.root.videoPage + 1) + " / " + videosPopup.root.videoPageCount
-                            + "  ·  " + videosPopup.root.videoFiles.length + " TOTAL"
-                    color: videosPopup.root.inkDeep
-                    font.family: videosPopup.root.mono
-                    font.pixelSize: 11
-                    font.letterSpacing: 2
-                }
-            }
-
-            Row {
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 12
-
-                CalendarChevron {
-                    root: videosPopup.root
-                    text: "‹"
-                    opacity: videosPopup.root.videoPage > 0 ? 1.0 : 0.3
-                    onTriggered: {
-                        if (videosPopup.root.videoPage > 0) {
-                            videosPopup.root.videoPage--;
-                            videosPopup.root.selectedVideo = 0;
-                        }
-                    }
-                }
-                CalendarChevron {
-                    root: videosPopup.root
-                    text: videosPopup.root.icoRefresh
-                    restColor: videosPopup.root.inkDeep
-                    font.pixelSize: 24
-                    onTriggered: videosPopup.root.refreshVideos()
-                }
-                CalendarChevron {
-                    root: videosPopup.root
-                    text: "›"
-                    opacity: videosPopup.root.videoPage < videosPopup.root.videoPageCount - 1 ? 1.0 : 0.3
-                    onTriggered: {
-                        if (videosPopup.root.videoPage < videosPopup.root.videoPageCount - 1) {
-                            videosPopup.root.videoPage++;
-                            videosPopup.root.selectedVideo = 0;
-                        }
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            width: parent.width
-            height: 1
-            color: videosPopup.root.sep
-        }
 
         Text {
             width: parent.width

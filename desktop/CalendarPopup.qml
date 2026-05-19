@@ -8,6 +8,29 @@ CardWindow {
     revealed: root.calendarVisible
     cardWidth: 322
     layerNamespace: "omarchy-calendar"
+    title: calendarPopup.root.calendarMonthName
+    subtitle: calendarPopup.root.calendarYear
+
+    headerRight: Row {
+        spacing: 12
+        CalendarChevron {
+            root: calendarPopup.root
+            text: "‹"
+            onTriggered: { calendarPopup.root.calendarMonthOffset--; calendarPopup.root.calendarTick++; calendarPopup.root.selectedDay = 0; }
+        }
+        CalendarChevron {
+            root: calendarPopup.root
+            text: "•"
+            restColor: calendarPopup.root.inkDeep
+            font.pixelSize: 19
+            onTriggered: { calendarPopup.root.calendarMonthOffset = 0; calendarPopup.root.calendarTick++; calendarPopup.root.selectedDay = (new Date()).getDate(); }
+        }
+        CalendarChevron {
+            root: calendarPopup.root
+            text: "›"
+            onTriggered: { calendarPopup.root.calendarMonthOffset++; calendarPopup.root.calendarTick++; calendarPopup.root.selectedDay = 0; }
+        }
+    }
 
     onDismiss: calendarPopup.root.calendarVisible = false
     onKeyPressed: function(event) {
@@ -20,59 +43,6 @@ CardWindow {
     Column {
         width: parent.width
         spacing: 12
-
-        // Month label on the left, year underneath; prev / today-reset /
-        // next chevrons on the right.
-        Item {
-            width: parent.width
-            height: 43
-
-            Column {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-
-                Text {
-                    text: calendarPopup.root.calendarMonthName
-                    color: calendarPopup.root.ink
-                    font.family: calendarPopup.root.mono
-                    font.pixelSize: 19
-                    font.letterSpacing: 4
-                    font.weight: Font.Medium
-                }
-                Text {
-                    text: calendarPopup.root.calendarYear
-                    color: calendarPopup.root.inkDeep
-                    font.family: calendarPopup.root.mono
-                    font.pixelSize: 13
-                    font.letterSpacing: 2
-                }
-            }
-
-            Row {
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 12
-
-                CalendarChevron {
-                    root: calendarPopup.root
-                    text: "‹"
-                    onTriggered: { calendarPopup.root.calendarMonthOffset--; calendarPopup.root.calendarTick++; calendarPopup.root.selectedDay = 0; }
-                }
-                CalendarChevron {
-                    root: calendarPopup.root
-                    text: "•"
-                    restColor: calendarPopup.root.inkDeep
-                    font.pixelSize: 19
-                    onTriggered: { calendarPopup.root.calendarMonthOffset = 0; calendarPopup.root.calendarTick++; calendarPopup.root.selectedDay = (new Date()).getDate(); }
-                }
-                CalendarChevron {
-                    root: calendarPopup.root
-                    text: "›"
-                    onTriggered: { calendarPopup.root.calendarMonthOffset++; calendarPopup.root.calendarTick++; calendarPopup.root.selectedDay = 0; }
-                }
-            }
-        }
 
         Rectangle {
             width: parent.width
