@@ -3,59 +3,34 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
 
-// Omarchy top bar. Layout and typography are Kanagawa Dragon's — kanji
-// workspaces, smoked sumi surface, autumn seal accents. Colours are
-// reactive: they read ~/.config/omarchy/current/theme/colors.toml so the
-// bar follows whatever omarchy theme is active.
-//
-// shell.qml owns shared state, probes, helpers, and IPC. The visible
-// surface area lives in per-feature files (Bar, *Popup, TooltipOverlay)
-// and reusable widgets (Module, Workspace, Bloom, …), all wired through
-// a single `root: root` property.
-ShellRoot {
+// Omarchy top bar. Owns the per-bar state, probes, and IPC; per-feature
+// surfaces (Bar, *Popup, TooltipOverlay) and widgets (Module, Workspace,
+// Bloom, …) read from `root` via `root: root` injection. Palette comes
+// from the shared Theme; colours are re-exposed on root so sibling files
+// keep their `root.paper` bindings.
+Item {
     id: root
 
-    // ---------- Theme path ----------
-    readonly property string colorsPath: Quickshell.env("HOME") + "/.config/omarchy/current/theme/colors.toml"
-    readonly property string themeNamePath: Quickshell.env("HOME") + "/.config/omarchy/current/theme.name"
+    required property var theme
 
-    // ---------- Semantic palette (resolved from colors.toml) ----------
-    // Names match the original Kanagawa Dragon mapping so the visual
-    // hierarchy carries over to any palette:
-    //   paper    = background          (bar surface base)
-    //   ink      = foreground          (primary text)
-    //   inkDeep  = color7              (secondary bright text)
-    //   sumi     = color8              (muted/decorative)
-    //   indigo   = accent              (info accent, e.g. low-battery warn)
-    //   seal     = color1              (alert / active marker)
-    property color paper:   "#181616"
-    property color ink:     "#c5c9c5"
-    property color inkDeep: "#c8c093"
-    property color sumi:    "#a6a69c"
-    property color indigo:  "#658594"
-    // sealRaw is the palette-sourced value. seal is its drift-modulated
-    // view: saturation rides driftAmount*0.05 above resting, which gets
-    // pumped right after a theme swap and eases back over ~3s. Every
-    // existing root.seal reference inherits the drift via this binding.
-    property color sealRaw: "#c4746e"
-    property real  driftAmount: 0
-    readonly property color seal: Qt.hsva(
-        sealRaw.hsvHue,
-        Math.min(1, sealRaw.hsvSaturation + driftAmount * 0.05),
-        sealRaw.hsvValue,
-        sealRaw.a
-    )
+    readonly property color paper:   theme.paper
+    readonly property color ink:     theme.ink
+    readonly property color inkDeep: theme.inkDeep
+    readonly property color sumi:    theme.sumi
+    readonly property color indigo:  theme.indigo
+    readonly property color seal:    theme.seal
+    readonly property color bg:      theme.bg
+    readonly property color fg:      theme.fg
+    readonly property color muted:   theme.muted
+    readonly property color accent:  theme.accent
+    readonly property color warn:    theme.warn
+    readonly property color sep:     theme.sep
 
-    // Derived bar colours. bg is paper at 0.94; sep is ink at 0.18.
-    readonly property color bg:     Qt.rgba(paper.r, paper.g, paper.b, 0.94)
-    readonly property color fg:     ink
-    readonly property color muted:  sumi
-    readonly property color accent: seal
-    readonly property color warn:   seal
-    readonly property color sep:    Qt.rgba(ink.r, ink.g, ink.b, 0.18)
+    readonly property string serif: theme.serif
+    readonly property string mono:  theme.mono
 
-    readonly property string serif: "serif"
-    readonly property string mono:  "JetBrainsMono Nerd Font"
+    // Wired in desktop/shell.qml to the sibling OmniMenu's toggle().
+    signal paletteToggleRequested()
 
     // Kanji numerals 〇 一 二 ... 十.
     readonly property var kanjiNum: ["〇","一","二","三","四","五","六","七","八","九","十"]
@@ -713,7 +688,7 @@ ShellRoot {
     }
 
     function openWeather() { root.weatherVisible = true; }
-    function refreshWeather() { weatherProbe.running = true; }
+    function refreshWeather() { weatherProbe.running = false; weatherProbe.running = true; }
     function editWeatherLocation() {
         root.run("mkdir -p \"$(dirname " + JSON.stringify(root.weatherLocationPath) + ")\""
                  + " && touch " + JSON.stringify(root.weatherLocationPath)
@@ -818,76 +793,6 @@ ShellRoot {
         running: true
         repeat: true
         onTriggered: { weatherProbe.running = false; weatherProbe.running = true; }
-    }
-
-    // ---------- Palette loader ----------
-    // Reads omarchy's colors.toml and re-applies the palette on any change.
-    // The file is rewritten in place when `omarchy theme set` runs, so
-    // FileView's inode watcher catches it without extra hooks.
-    function parseColors(text) {
-        const want = {
-            background: null, foreground: null, accent: null,
-            color1: null, color7: null, color8: null
-        };
-        const re = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]+)"/;
-        const lines = text.split("\n");
-        for (let i = 0; i < lines.length; i++) {
-            const m = lines[i].match(re);
-            if (m && (m[1] in want)) want[m[1]] = m[2];
-        }
-        if (want.background) root.paper   = want.background;
-        if (want.foreground) root.ink     = want.foreground;
-        if (want.color7)     root.inkDeep = want.color7;
-        if (want.color8)     root.sumi    = want.color8;
-        if (want.accent)     root.indigo  = want.accent;
-        if (want.color1)     root.sealRaw = want.color1;
-    }
-
-    FileView {
-        id: paletteFile
-        path: root.colorsPath
-        watchChanges: true
-        onFileChanged: reload()
-        onLoaded: root.parseColors(paletteFile.text())
-    }
-
-    // omarchy-theme-set rm -rf's current/theme/ and mv's a fresh dir in, so
-    // colors.toml gets a new inode each swap and paletteFile's inotify watch
-    // dies with it. theme.name, by contrast, is rewritten in place (echo > )
-    // so its inode is stable. Use it as a swap-detection beacon.
-    FileView {
-        id: themeMarker
-        path: root.themeNamePath
-        watchChanges: true
-        // Restart the drift delay every swap. onFileChanged only fires on
-        // inotify-driven changes (not on the initial load), so this is the
-        // right place to detect "user just did `omarchy theme set`."
-        onFileChanged: { reload(); paletteFile.reload(); driftDelay.restart(); }
-    }
-
-    // theme-wash's animation runs ~1.5s; wait it out so the saturation
-    // bump lands as it exits, then rise quick and taper slow over ~3s.
-    Timer {
-        id: driftDelay
-        interval: 1550
-        repeat: false
-        onTriggered: driftAnim.restart()
-    }
-
-    SequentialAnimation {
-        id: driftAnim
-        NumberAnimation {
-            target: root; property: "driftAmount"
-            from: 0; to: 1
-            duration: 200
-            easing.type: Easing.OutQuad
-        }
-        NumberAnimation {
-            target: root; property: "driftAmount"
-            to: 0
-            duration: 2800
-            easing.type: Easing.OutCubic
-        }
     }
 
     // ---------- Generic launcher ----------
@@ -1209,7 +1114,7 @@ ShellRoot {
     }
 
     // ---------- Videos list probe ----------
-    // Cache layout: ~/.cache/quickshell-navbar/video-thumbs/<md5-of-path>.{jpg,meta}
+    // Cache layout: ~/.cache/quickshell-desktop/video-thumbs/<md5-of-path>.{jpg,meta}
     // where .meta holds the integer duration in seconds. Both are
     // re-generated when the source is newer (`-nt`); meta is what lets warm
     // opens skip the ffprobe spawn-storm. ffmpeg/ffprobe absence is tolerated
@@ -1223,7 +1128,7 @@ ShellRoot {
         id: videoProbe
         running: false
         command: ["bash", "-c",
-            "CDIR=\"$HOME/.cache/quickshell-navbar/video-thumbs\"; "
+            "CDIR=\"$HOME/.cache/quickshell-desktop/video-thumbs\"; "
           + "mkdir -p \"$CDIR\" 2>/dev/null; "
           + "PATHS=$(find \"$HOME/Videos\" -maxdepth 3 -type f "
               + "\\( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.webm' "

@@ -170,7 +170,7 @@ PanelWindow {
                 color: bar.root.seal
                 fontFamily: "omarchy"
                 fontSize: 14
-                onActivated: bar.root.run(Quickshell.env("HOME") + "/.config/quickshell/omni-menu/toggle.sh")
+                onActivated: bar.root.paletteToggleRequested()
                 onRightActivated: bar.root.run("xdg-terminal-exec")
             }
 

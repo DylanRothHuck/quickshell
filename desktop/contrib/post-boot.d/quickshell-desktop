@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Launch the custom Quickshell navbar at session start.
+# Launch the Quickshell desktop (bar + omni-menu) at session start.
 # -d daemonizes so this hook script can exit immediately.
 # -n bails out if an instance is already running (idempotent).
-qs -n -d -c navbar
+qs -n -d -c desktop

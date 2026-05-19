@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "Data.js" as Data
+import "Palette.js" as Palette
 
 // Theme switcher. Probes both $OMARCHY_PATH/themes (official) and
 // ~/.config/omarchy/themes (user) for theme directories, parses each
@@ -53,24 +54,17 @@ Item {
         probeProc.running = true;
     }
 
-    // Pulls the colors we want for the swatch row, in display order.
-    // Background + foreground anchor the pair; color1..color6 fan out
-    // the accents. Falls back to whatever colorN keys exist if the
+    // Background + foreground anchor the swatch pair; color1..color6 fan
+    // out the accents. Falls back to whatever colorN keys exist if the
     // theme is missing the canonical names.
     function paletteOf(toml) {
+        const map = Palette.parseAll(toml);
         const want = ["background", "foreground", "color1", "color2", "color3", "color4", "color5", "color6"];
-        const map = {};
-        const lines = (toml || "").split("\n");
-        for (let i = 0; i < lines.length; i++) {
-            const m = lines[i].match(/^\s*([a-zA-Z0-9_]+)\s*=\s*"(#[0-9a-fA-F]{3,8})"/);
-            if (m) map[m[1].toLowerCase()] = m[2];
-        }
         const out = [];
         for (let i = 0; i < want.length; i++) {
             if (map[want[i]]) out.push(map[want[i]]);
         }
         if (out.length === 0) {
-            // Last-ditch: grab the first ~8 colorN entries by number.
             for (let i = 0; i < 16 && out.length < 8; i++) {
                 if (map["color" + i]) out.push(map["color" + i]);
             }

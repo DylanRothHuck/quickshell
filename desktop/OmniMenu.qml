@@ -6,39 +6,29 @@ import Quickshell.Wayland
 import Quickshell.Io
 import "Data.js" as Data
 
-// Omni-menu. A single command palette that fuses installed apps (.desktop
-// scan) with every action exposed by `omarchy-menu` — Style, Setup, Install,
-// Remove, Update, System, Toggle, Trigger, Capture, Share, Learn. Search
-// indexes title, category, and a curated synonym list per entry, so a query
-// like "wallpaper" lands on Background, "dark mode" lands on Theme, "reboot"
-// lands on Restart, etc.
-//
-// Visual language follows navbar/shell.qml: Kanagawa Dragon typography on
-// the omarchy live palette (~/.config/omarchy/current/theme/colors.toml),
-// mono caps with letter-spacing for headings, a centred card with a
-// scale-from-centre reveal, Esc/Q to dismiss.
-//
-// Toggle from a Hyprland keybind:
-//   bind = SUPER, SPACE, exec, qs ipc call palette toggle
-ShellRoot {
+// Omni-menu palette. Fuses installed apps (.desktop scan) with every
+// `omarchy-menu` action, scored against title, category, and per-entry
+// synonyms (so "wallpaper" finds Background, "reboot" finds Restart).
+// Drill-down rows pivot the list to a category, fd file search, gh repo
+// search, processes, or themes. Toggle via:
+//   qs -c desktop ipc call palette toggle
+Item {
     id: root
 
-    // Theme.qml owns the live palette (sourced from omarchy's colors.toml)
-    // and its derived shades. Aliased at the root so the existing UI
-    // bindings (root.paper, root.ink, …) keep working unchanged.
-    Theme { id: theme }
-    readonly property alias paper:   theme.paper
-    readonly property alias ink:     theme.ink
-    readonly property alias inkDeep: theme.inkDeep
-    readonly property alias sumi:    theme.sumi
-    readonly property alias indigo:  theme.indigo
-    readonly property alias seal:    theme.seal
-    readonly property alias bg:      theme.bg
-    readonly property alias fg:      theme.fg
-    readonly property alias muted:   theme.muted
-    readonly property alias sep:     theme.sep
-    readonly property alias rowHi:   theme.rowHi
-    readonly property alias rowSel:  theme.rowSel
+    required property var theme
+
+    readonly property color paper:   theme.paper
+    readonly property color ink:     theme.ink
+    readonly property color inkDeep: theme.inkDeep
+    readonly property color sumi:    theme.sumi
+    readonly property color indigo:  theme.indigo
+    readonly property color seal:    theme.seal
+    readonly property color bg:      theme.bg
+    readonly property color fg:      theme.fg
+    readonly property color muted:   theme.muted
+    readonly property color sep:     theme.sep
+    readonly property color rowHi:   theme.rowHi
+    readonly property color rowSel:  theme.rowSel
 
     // Scoring weights and result cap. omarchy-menu has ~125 entries plus the
     // 12 nav rows plus ~80-200 .desktop apps, so the cap lets a quick
@@ -49,8 +39,8 @@ ShellRoot {
     readonly property int scCat:    10
     readonly property int maxResults: 250
 
-    readonly property string mono:  "JetBrainsMono Nerd Font"
-    readonly property string serif: "serif"
+    readonly property string mono:  theme.mono
+    readonly property string serif: theme.serif
 
     // Sources that feed `allItems`. AppScan reads .desktop files;
     // NavbarApps probes the navbar shell for its IpcHandler widgets and
@@ -62,6 +52,8 @@ ShellRoot {
     readonly property alias appsLoaded: appScan.loaded
 
     // ---------- Visibility / state ----------
+    // Trailing underscore avoids shadowing Item.visible — read by the
+    // PanelWindow's visibility binding below.
     property bool visible_: false
     property string query: ""
     property int selectedIndex: 0
@@ -256,12 +248,6 @@ ShellRoot {
         root.close();
     }
 
-
-
-    // FileSearch and GhSearch both react to query/selectedItem changes
-    // internally via their `query` and `selectedItem` bindings, so the
-    // shell doesn't have to forward anything explicitly anymore.
-
     // ---------- Search ----------
     // Each query token must match somewhere in the item for the item to
     // qualify; scores stack so "thm dark" finds Theme even though neither
@@ -379,20 +365,6 @@ ShellRoot {
         function refresh(): void { appScan.refresh(); }
     }
 
-    // ---------- Idle self-exit ----------
-    // Daemon exits after the palette has been closed for this long, so it
-    // doesn't sit resident overnight. The toggle.sh wrapper cold-starts it
-    // again on the next SUPER+SPACE or navbar click. Reset whenever the
-    // palette is visible.
-    readonly property int idleTimeoutMs: 5 * 60 * 1000
-    Timer {
-        id: idleTimer
-        interval: root.idleTimeoutMs
-        running: !root.visible_
-        repeat: false
-        onTriggered: Qt.quit()
-    }
-
     // ---------- Panel ----------
     PanelWindow {
         id: panel
@@ -449,10 +421,16 @@ ShellRoot {
             focus: root.visible_
             Keys.onPressed: function(event) {
                 if (event.key === Qt.Key_Escape) {
-                    // First Esc steps out of a drilled-in category; a
-                    // second Esc closes the palette. Drives muscle-memory
-                    // closer to "back" than to "close everything".
-                    if (!root.goUp()) root.close();
+                    // Esc cascade: clear the typed query first, then
+                    // unwind drill-down, then close. Each Esc undoes
+                    // exactly one layer of state so the palette never
+                    // exits with a half-typed query on screen.
+                    if (root.query.length > 0) {
+                        root.query = "";
+                        root.selectedIndex = 0;
+                    } else if (!root.goUp()) {
+                        root.close();
+                    }
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Down
                            || (event.key === Qt.Key_Tab && !(event.modifiers & Qt.ShiftModifier))) {
