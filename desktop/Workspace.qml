@@ -49,7 +49,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: slideY
         text: wsCell.label
-        color: wsCell.active ? wsCell.root.seal : (wsCell.present ? wsCell.root.ink : wsCell.root.sumi)
+        color: wsCell.active ? wsCell.root.seal : (wsCell.present ? wsCell.root.ink : wsCell.root.inkDeep)
         opacity: wsCell.active ? 1.0 : (wsCell.present ? 0.75 : 0.35)
         font.family: wsCell.root.serif
         font.pixelSize: wsCell.active ? 14 : 12

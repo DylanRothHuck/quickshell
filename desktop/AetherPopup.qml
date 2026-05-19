@@ -109,7 +109,7 @@ CardWindow {
                       ? "Filter blueprints…"
                       : aetherPopup.root.aetherQuery
                 color: aetherPopup.root.aetherQuery.length === 0
-                       ? aetherPopup.root.sumi : aetherPopup.root.ink
+                       ? aetherPopup.root.inkDeep : aetherPopup.root.ink
                 opacity: aetherPopup.root.aetherQuery.length === 0 ? 0.5 : 1.0
                 font.family: aetherPopup.root.mono
                 font.pixelSize: 12
@@ -192,7 +192,7 @@ CardWindow {
                     anchors.leftMargin: 190
                     anchors.verticalCenter: parent.verticalCenter
                     text: aeRow.modelData.lightMode ? "L" : "D"
-                    color: aetherPopup.root.sumi
+                    color: aetherPopup.root.inkDeep
                     font.family: aetherPopup.root.mono
                     font.pixelSize: 9
                     font.letterSpacing: 1

@@ -209,7 +209,7 @@ PanelWindow {
                          : (bar.root.weatherLoaded
                             ? bar.root.weatherTempC + "°C"
                             : "Weather…")
-                color: bar.root.weatherUnavailable ? bar.root.sumi : bar.root.ink
+                color: bar.root.weatherUnavailable ? bar.root.inkDeep : bar.root.ink
                 fontSize: 13
                 onActivated: {
                     if (bar.root.weatherVisible) bar.root.weatherVisible = false;

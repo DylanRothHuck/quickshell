@@ -40,7 +40,7 @@ Item {
         anchors.left: parent.left
         anchors.top: parent.top
         text: slider.label
-        color: slider.selected ? slider.root.seal : slider.root.sumi
+        color: slider.selected ? slider.root.seal : slider.root.inkDeep
         font.family: slider.root.mono
         font.pixelSize: 10
         font.letterSpacing: 2

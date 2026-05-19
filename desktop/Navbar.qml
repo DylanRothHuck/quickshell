@@ -16,7 +16,7 @@ Item {
     readonly property color paper:   theme.paper
     readonly property color ink:     theme.ink
     readonly property color inkDeep: theme.inkDeep
-    readonly property color sumi:    theme.sumi
+    readonly property color sumi:    theme.inkDeep
     readonly property color indigo:  theme.indigo
     readonly property color seal:    theme.seal
     readonly property color bg:      theme.bg

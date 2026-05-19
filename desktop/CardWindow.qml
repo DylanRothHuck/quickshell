@@ -111,7 +111,7 @@ PanelWindow {
                     Text {
                         visible: card.subtitle.length > 0
                         text: card.subtitle
-                        color: card.theme.sumi
+                        color: card.theme.inkDeep
                         font.family: card.theme.mono
                         font.pixelSize: 11
                         font.letterSpacing: 2
@@ -144,7 +144,7 @@ PanelWindow {
                 visible: card.footer.length > 0
                 width: parent.width
                 text: card.footer
-                color: card.theme.sumi
+                color: card.theme.inkDeep
                 font.family: card.theme.mono
                 font.pixelSize: 10
                 font.letterSpacing: 2

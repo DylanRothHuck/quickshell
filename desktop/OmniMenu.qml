@@ -20,7 +20,7 @@ Item {
     readonly property color paper:   theme.paper
     readonly property color ink:     theme.ink
     readonly property color inkDeep: theme.inkDeep
-    readonly property color sumi:    theme.sumi
+    readonly property color sumi:    theme.inkDeep
     readonly property color indigo:  theme.indigo
     readonly property color seal:    theme.seal
     readonly property color bg:      theme.bg
@@ -568,7 +568,7 @@ Item {
                                     ? "NO MATCHES"
                                     : total + " MATCH" + (total === 1 ? "" : "ES");
                             }
-                            color: root.sumi
+                            color: root.inkDeep
                             font.family: root.mono
                             font.pixelSize: 11
                             font.letterSpacing: 2
@@ -588,7 +588,7 @@ Item {
                             else if (root.themeMode) verb = "APPLY";
                             return "↑↓ / TAB  ·  ↵ " + verb + "  ·  ^S STAR  ·  ESC BACK";
                         }
-                        color: root.sumi
+                        color: root.inkDeep
                         font.family: root.mono
                         font.pixelSize: 10
                         font.letterSpacing: 2
@@ -631,7 +631,7 @@ Item {
                             if (root.themeMode) return "Type to filter themes…";
                             return "Type to search apps, themes, settings…";
                         }
-                        color: root.query.length === 0 ? root.sumi : root.ink
+                        color: root.query.length === 0 ? root.inkDeep : root.ink
                         opacity: root.query.length === 0 ? 0.5 : 1.0
                         font.family: root.mono
                         font.pixelSize: 14
@@ -817,7 +817,7 @@ Item {
                                 text: row.modelData.rawCategory
                                       ? (row.modelData.category || "")
                                       : (row.modelData.category || "").toUpperCase()
-                                color: row.isSelected ? root.seal : root.sumi
+                                color: row.isSelected ? root.seal : root.inkDeep
                                 opacity: row.isSelected ? 0.95 : 0.65
                                 font.family: root.mono
                                 font.pixelSize: 10
@@ -866,7 +866,7 @@ Item {
                                 if (root.themeMode) return themes.loaded ? "NO THEMES MATCH" : "LOADING THEMES…";
                                 return root.appsLoaded ? "NOTHING MATCHES" : "INDEXING APPS…";
                             }
-                            color: root.sumi
+                            color: root.inkDeep
                             font.family: root.mono
                             font.pixelSize: 11
                             font.letterSpacing: 3
@@ -929,7 +929,7 @@ Item {
                                     : "";
                                 return root.previewPath ? Data.tildify(Data.dirname(root.previewPath), root.homeDir) : "";
                             }
-                            color: root.sumi
+                            color: root.inkDeep
                             font.family: root.mono
                             font.pixelSize: 10
                             font.letterSpacing: 1
@@ -965,7 +965,7 @@ Item {
                                     if (root.themeMode) return "SELECT A THEME";
                                     return root.query.length === 0 ? "PREVIEW APPEARS HERE" : "SELECT A FILE";
                                 }
-                                color: root.sumi
+                                color: root.inkDeep
                                 font.family: root.mono
                                 font.pixelSize: 10
                                 font.letterSpacing: 3
@@ -1007,7 +1007,7 @@ Item {
                                 anchors.fill: parent
                                 visible: root.previewKind === "meta"
                                 text: root.previewMeta
-                                color: root.sumi
+                                color: root.inkDeep
                                 font.family: root.mono
                                 font.pixelSize: 11
                                 lineHeight: 1.4
@@ -1123,7 +1123,7 @@ Item {
                             if (it.isTheme)     return "↵ omarchy-theme-set " + (it.themeName || "");
                             return "$ " + it.exec;
                         }
-                        color: root.sumi
+                        color: root.inkDeep
                         font.family: root.mono
                         font.pixelSize: 10
                         font.letterSpacing: 1
