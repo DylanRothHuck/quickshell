@@ -1,41 +1,128 @@
 import QtQuick
 
-// Quick-handle picker: scrollable list of saved blueprints with their
-// first 8 swatches and a light/dark glyph. Clicking a row applies it
-// via the CLI; OPEN GUI and RANDOM REGEN chips cover the heavy actions
-// so the popup remains the single left-click entry point.
+// Two-mode picker. BLUEPRINTS shows the user's saved aether blueprints
+// (apply via `aether --apply-blueprint`); WALLHAVEN streams SFW toplist
+// wallpapers from wallhaven.cc, downloads the picked one, and hands it
+// to `aether --generate` for full palette extraction + apply.
 CardWindow {
     id: aetherPopup
     required property var root
 
+    // "blueprints" | "wallhaven"
+    property string mode: "blueprints"
+    readonly property bool wallhavenMode: mode === "wallhaven"
+
+    WallhavenSource {
+        id: wallhaven
+        navbar: aetherPopup.root
+        active: aetherPopup.wallhavenMode && aetherPopup.revealed
+    }
+
     theme: root
     revealed: root.aetherVisible
-    cardWidth: 460
+    cardWidth: wallhavenMode ? 580 : 460
     layerNamespace: "omarchy-aether"
 
     title: "AETHER"
     subtitle: {
         const r = aetherPopup.root;
-        if (r.aetherLoading) return "LOADING…";
+        if (aetherPopup.wallhavenMode) {
+            if (wallhaven.loading) return "WALLHAVEN  ·  LOADING…";
+            const n = wallhaven.items.length;
+            if (n === 0) return "WALLHAVEN  ·  NO RESULTS";
+            return "WALLHAVEN  ·  TOPLIST  ·  PAGE " + wallhaven.page;
+        }
+        if (r.aetherLoading) return "BLUEPRINTS  ·  LOADING…";
         const total = r.aetherBlueprints.length;
-        if (total === 0) return "NO BLUEPRINTS";
+        if (total === 0) return "BLUEPRINTS  ·  NONE";
         const shown = r.aetherFiltered.length;
-        if (r.aetherQuery === "") return total + " BLUEPRINTS";
+        if (r.aetherQuery === "") return "BLUEPRINTS  ·  " + total + " SAVED";
         return shown === 0
-            ? "NO MATCHES"
-            : shown + " / " + total + " MATCH" + (shown === 1 ? "" : "ES");
+            ? "BLUEPRINTS  ·  NO MATCHES"
+            : "BLUEPRINTS  ·  " + shown + " / " + total + " MATCH" + (shown === 1 ? "" : "ES");
     }
-    footer: "TYPE TO FILTER  ·  TAB ↑↓ NAV  ·  ↵ APPLY  ·  ESC CLOSE"
+    footer: "TAB SWITCHES MODE  ·  ↵ APPLY  ·  ESC CLOSE"
+
+    headerRight: Row {
+        spacing: 12
+        visible: aetherPopup.wallhavenMode
+        CalendarChevron {
+            root: aetherPopup.root
+            text: "‹"
+            opacity: wallhaven.page > 1 ? 1.0 : 0.3
+            onTriggered: if (wallhaven.page > 1) wallhaven.loadPage(wallhaven.page - 1)
+        }
+        CalendarChevron {
+            root: aetherPopup.root
+            text: aetherPopup.root.icoRefresh
+            restColor: aetherPopup.root.inkDeep
+            font.pixelSize: 22
+            onTriggered: wallhaven.refresh()
+        }
+        CalendarChevron {
+            root: aetherPopup.root
+            text: "›"
+            onTriggered: wallhaven.loadPage(wallhaven.page + 1)
+        }
+    }
 
     onDismiss: aetherPopup.root.aetherVisible = false
 
-    // Popup doubles as a search field — Esc is handled by CardWindow;
-    // every printable key feeds the query so single-letter mnemonics
-    // (g, r) land in the filter instead of firing actions.
     onKeyPressed: function(event) {
         const r = aetherPopup.root;
         const k = event.key;
         const mods = event.modifiers;
+
+        // Tab switches modes. Shift+Tab in blueprint list nav stays as
+        // a backward step — only plain Tab toggles modes.
+        if (k === Qt.Key_Tab && !(mods & Qt.ShiftModifier) && !aetherPopup.wallhavenMode && r.aetherQuery.length === 0) {
+            aetherPopup.mode = "wallhaven";
+            event.accepted = true;
+            return;
+        }
+
+        if (aetherPopup.wallhavenMode) {
+            // 4-col grid: ←/→ step by 1, ↑/↓ step by 4 (cols).
+            const followSel = () => wallhavenGrid.positionViewAtIndex(wallhaven.selectedIndex, GridView.Contain);
+            if (k === Qt.Key_Right || k === Qt.Key_L) {
+                wallhaven.moveSelection(1); followSel();
+            } else if (k === Qt.Key_Left || k === Qt.Key_H) {
+                wallhaven.moveSelection(-1); followSel();
+            } else if (k === Qt.Key_Down || k === Qt.Key_J) {
+                wallhaven.moveSelection(4); followSel();
+            } else if (k === Qt.Key_Up || k === Qt.Key_K) {
+                wallhaven.moveSelection(-4); followSel();
+            } else if (k === Qt.Key_N) {
+                wallhaven.loadPage(wallhaven.page + 1);
+            } else if (k === Qt.Key_P) {
+                if (wallhaven.page > 1) wallhaven.loadPage(wallhaven.page - 1);
+            } else if (k === Qt.Key_Return || k === Qt.Key_Enter) {
+                const it = wallhaven.items[wallhaven.selectedIndex];
+                if (it) {
+                    wallhaven.applyItem(it);
+                    r.aetherVisible = false;
+                }
+            } else if (k === Qt.Key_Backspace) {
+                if (wallhaven.query.length > 0) {
+                    wallhaven.query = wallhaven.query.slice(0, -1);
+                } else {
+                    aetherPopup.mode = "blueprints";
+                }
+            } else if (event.text && event.text.length === 1) {
+                const ch = event.text;
+                if (ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127) {
+                    wallhaven.query += ch;
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+            event.accepted = true;
+            return;
+        }
+
+        // Blueprints mode (existing behaviour).
         if (k === Qt.Key_Down
             || (k === Qt.Key_Tab && !(mods & Qt.ShiftModifier))) {
             r.moveAetherSelection(1, true);
@@ -81,11 +168,31 @@ CardWindow {
         event.accepted = true;
     }
 
-    // Body
+    // ---------- Body ----------
     Column {
         width: parent.width
         spacing: 12
 
+        // Mode switch chips
+        Row {
+            spacing: 8
+            DisplayChip {
+                root: aetherPopup.root
+                label: "BLUEPRINTS"
+                selected: !aetherPopup.wallhavenMode
+                onActivated: aetherPopup.mode = "blueprints"
+            }
+            DisplayChip {
+                root: aetherPopup.root
+                label: "WALLHAVEN"
+                selected: aetherPopup.wallhavenMode
+                onActivated: aetherPopup.mode = "wallhaven"
+            }
+        }
+
+        Rectangle { width: parent.width; height: 1; color: aetherPopup.root.sep }
+
+        // Search row — feeds the active mode's query.
         Item {
             width: parent.width
             height: 28
@@ -105,12 +212,15 @@ CardWindow {
                 anchors.left: aetherSearchGlyph.right
                 anchors.leftMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
-                text: aetherPopup.root.aetherQuery.length === 0
-                      ? "Filter blueprints…"
-                      : aetherPopup.root.aetherQuery
-                color: aetherPopup.root.aetherQuery.length === 0
-                       ? aetherPopup.root.inkDeep : aetherPopup.root.ink
-                opacity: aetherPopup.root.aetherQuery.length === 0 ? 0.5 : 1.0
+                readonly property string activeQuery: aetherPopup.wallhavenMode
+                    ? wallhaven.query : aetherPopup.root.aetherQuery
+                text: activeQuery.length === 0
+                      ? (aetherPopup.wallhavenMode
+                            ? "Search wallhaven (empty = toplist)…"
+                            : "Filter blueprints…")
+                      : activeQuery
+                color: activeQuery.length === 0 ? aetherPopup.root.inkDeep : aetherPopup.root.ink
+                opacity: activeQuery.length === 0 ? 0.5 : 1.0
                 font.family: aetherPopup.root.mono
                 font.pixelSize: 12
                 font.letterSpacing: 1
@@ -121,7 +231,7 @@ CardWindow {
                 height: 14
                 color: aetherPopup.root.seal
                 anchors.verticalCenter: parent.verticalCenter
-                x: aetherPopup.root.aetherQuery.length === 0
+                x: aetherQueryText.activeQuery.length === 0
                    ? aetherSearchGlyph.x + aetherSearchGlyph.width + 10
                    : aetherQueryText.x + aetherQueryText.contentWidth + 2
                 visible: aetherPopup.root.aetherVisible
@@ -136,10 +246,12 @@ CardWindow {
 
         Rectangle { width: parent.width; height: 1; color: aetherPopup.root.sep }
 
+        // ---------- Blueprints list ----------
         ListView {
             id: aetherList
             width: parent.width
             height: 360
+            visible: !aetherPopup.wallhavenMode
             clip: true
             model: aetherPopup.root.aetherFiltered
             spacing: 0
@@ -228,11 +340,116 @@ CardWindow {
             }
         }
 
-        Rectangle { width: parent.width; height: 1; color: aetherPopup.root.sep }
+        // ---------- Wallhaven grid (scrollable) ----------
+        GridView {
+            id: wallhavenGrid
+            width: parent.width
+            height: 360
+            visible: aetherPopup.wallhavenMode
+            clip: true
+            cellWidth: width / 4
+            cellHeight: cellWidth * 9 / 16 + 16
+            model: wallhaven.items
+            currentIndex: wallhaven.selectedIndex
+            boundsBehavior: Flickable.StopAtBounds
+            cacheBuffer: cellHeight * 2
 
+            delegate: Item {
+                id: whCell
+                required property var modelData
+                required property int index
+                readonly property bool isSelected: wallhaven.selectedIndex === whCell.index
+
+                width: wallhavenGrid.cellWidth
+                height: wallhavenGrid.cellHeight
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 3
+                    anchors.bottomMargin: 11
+                    color: Qt.rgba(aetherPopup.root.ink.r, aetherPopup.root.ink.g, aetherPopup.root.ink.b, 0.04)
+                    border.color: whCell.isSelected ? aetherPopup.root.seal : aetherPopup.root.sep
+                    border.width: 1
+                    antialiasing: true
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        source: aetherPopup.revealed ? whCell.modelData.thumb : ""
+                        fillMode: Image.PreserveAspectCrop
+                        sourceSize.width: 256
+                        sourceSize.height: 144
+                        asynchronous: true
+                        cache: true
+                        clip: true
+                        opacity: whMouse.containsMouse || whCell.isSelected ? 1.0 : 0.85
+                        Behavior on opacity { NumberAnimation { duration: 140 } }
+                    }
+                }
+
+                // Wallhaven ships a pre-computed palette per image; render
+                // as a tiny strip so users feel how the theme will land
+                // before applying.
+                Row {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: 3
+                    anchors.rightMargin: 3
+                    spacing: 0
+                    Repeater {
+                        model: (whCell.modelData.colors || []).slice(0, 5)
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: (whCell.width - 6) / 5
+                            height: 8
+                            color: modelData
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: whMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onEntered: wallhaven.selectedIndex = whCell.index
+                    onClicked: {
+                        wallhaven.applyItem(whCell.modelData);
+                        aetherPopup.root.aetherVisible = false;
+                    }
+                }
+            }
+        }
+
+        // Empty-state placeholder for wallhaven mode while the first
+        // page hasn't loaded.
+        Text {
+            width: parent.width
+            visible: aetherPopup.wallhavenMode && wallhaven.items.length === 0
+            horizontalAlignment: Text.AlignHCenter
+            text: wallhaven.loading ? "FETCHING WALLHAVEN…"
+                                    : "NO RESULTS — TRY A DIFFERENT QUERY"
+            color: aetherPopup.root.inkDeep
+            font.family: aetherPopup.root.mono
+            font.pixelSize: 11
+            font.letterSpacing: 2
+            opacity: 0.6
+            padding: 60
+        }
+
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: aetherPopup.root.sep
+            visible: !aetherPopup.wallhavenMode
+        }
+
+        // ---------- Blueprint-only actions ----------
         Item {
             width: parent.width
             height: 26
+            visible: !aetherPopup.wallhavenMode
             DisplayChip {
                 root: aetherPopup.root
                 anchors.left: parent.left

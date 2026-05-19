@@ -164,6 +164,7 @@ PanelWindow {
                 font.pixelSize: 10
                 font.letterSpacing: 2
                 horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
                 opacity: 0.7
             }
         }

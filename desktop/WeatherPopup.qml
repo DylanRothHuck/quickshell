@@ -8,7 +8,7 @@ CardWindow {
     revealed: root.weatherVisible
     cardWidth: 360
     layerNamespace: "omarchy-weather"
-    footer: "WTTR.IN · CLICK SUBTITLE TO EDIT LOCATION · R REFRESH · ESC"
+    footer: "CLICK PLACE TO EDIT · R REFRESH · ESC"
 
     onDismiss: weatherPopup.root.weatherVisible = false
     onKeyPressed: function(event) {
