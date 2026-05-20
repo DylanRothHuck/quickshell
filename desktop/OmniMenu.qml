@@ -607,7 +607,7 @@ Item {
         // still feels deliberate.
         Behavior on reveal {
             NumberAnimation {
-                duration: root.visible_ ? 90 : 110
+                duration: root.visible_ ? 60 : 70
                 easing.type: root.visible_ ? Easing.OutQuad : Easing.InQuad
             }
         }
@@ -642,7 +642,7 @@ Item {
             // panel.
             width: root.previewActive ? 1000 : 640
             Behavior on width {
-                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: 60; easing.type: Easing.OutCubic }
             }
             // Cap the card so it never exceeds the screen even on small
             // displays; cardCol implicitHeight covers the search + list +
@@ -962,9 +962,9 @@ Item {
                                                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.03)
                                     border.color: tileSlot.selected ? root.seal : root.sep
                                     border.width: tileSlot.selected ? 2 : 1
-                                    Behavior on color        { ColorAnimation  { duration: 120 } }
-                                    Behavior on border.color { ColorAnimation  { duration: 120 } }
-                                    Behavior on border.width { NumberAnimation { duration: 120 } }
+                                    Behavior on color        { ColorAnimation  { duration: 50 } }
+                                    Behavior on border.color { ColorAnimation  { duration: 50 } }
+                                    Behavior on border.width { NumberAnimation { duration: 50 } }
                                 }
 
                                 Column {
@@ -1073,7 +1073,7 @@ Item {
                     height: visible ? Math.min(_wantHeight, _maxHeight) : 0
                     clip: true
                     Behavior on height {
-                        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                        NumberAnimation { duration: 60; easing.type: Easing.OutCubic }
                     }
 
                     readonly property var t: root.expandedTile
@@ -1362,7 +1362,7 @@ Item {
                                 color: row.isSelected ? root.rowSel
                                                        : rowMouse.containsMouse ? root.rowHi
                                                                                 : "transparent"
-                                Behavior on color { ColorAnimation { duration: 90 } }
+                                Behavior on color { ColorAnimation { duration: 40 } }
                             }
                             Rectangle {
                                 anchors.left: parent.left
@@ -1426,7 +1426,7 @@ Item {
                                     source: appImg
                                     colorization: 1.0
                                     colorizationColor: iconText.tint
-                                    Behavior on colorizationColor { ColorAnimation { duration: 90 } }
+                                    Behavior on colorizationColor { ColorAnimation { duration: 40 } }
                                 }
                             }
                             Text {
