@@ -600,15 +600,13 @@ Item {
         WlrLayershell.keyboardFocus: root.visible_ ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
         property real reveal: root.visible_ ? 1 : 0
-        // Short open easing so SUPER+SPACE reads as instant: a 90ms
-        // OutQuad lands in the first paintable frame after the global
-        // shortcut fires (target ~16-32ms) and finishes before the eye
-        // settles on the card. Close stays a touch slower so dismissal
-        // still feels deliberate.
+        // Open is instant (no fade-in) so SUPER+SPACE paints the palette
+        // on the very next frame. Close keeps a short eased fade so the
+        // dismissal still reads as a deliberate motion instead of a pop.
         Behavior on reveal {
             NumberAnimation {
-                duration: root.visible_ ? 60 : 70
-                easing.type: root.visible_ ? Easing.OutQuad : Easing.InQuad
+                duration: root.visible_ ? 0 : 70
+                easing.type: Easing.InQuad
             }
         }
 
