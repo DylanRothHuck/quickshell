@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import Quickshell.Services.Mpris
 
 // Omarchy top bar. Owns the per-bar state, probes, and IPC; per-feature
 // surfaces (Bar, *Popup, TooltipOverlay) and widgets (Module, Workspace,
@@ -56,6 +57,8 @@ Item {
     readonly property string icoSearch:  String.fromCodePoint(0xf0349)
     readonly property string icoUpdate:  String.fromCodePoint(0xf021)
     readonly property string icoPlug:    String.fromCodePoint(0xf06a5)
+    readonly property string icoMusic:   String.fromCodePoint(0xf001)
+    readonly property string icoPause:   String.fromCodePoint(0xf04c)
 
     readonly property int barHeight: 26
 
@@ -1748,5 +1751,65 @@ Item {
         }
         function open(): void  { root.openCalendar(); }
         function close(): void { root.calendarVisible = false; }
+    }
+
+    // ---------- MPRIS (now playing) ----------
+    // Mpris.players is a live list of every player that has registered on
+    // the bus. We don't bind to a single "active" one — instead the hidden
+    // Repeater below subscribes to each player's signals, and on any track
+    // or playback change we recompute which player to surface in the bar.
+    // Preference: a playing player wins; otherwise the most-recently-seen
+    // paused one with non-empty metadata; otherwise nothing.
+    property MprisPlayer musicPlayer: null
+    property string musicTitle: ""
+    property string musicArtist: ""
+    property bool   musicPlaying: false
+
+    function refreshMusic() {
+        const players = Mpris.players ? Mpris.players.values : [];
+        let best = null;
+        let bestRank = -1;
+        for (let i = 0; i < players.length; i++) {
+            const p = players[i];
+            if (!p) continue;
+            const hasTitle = !!(p.trackTitle && p.trackTitle.length > 0);
+            // 2 = playing with title, 1 = paused with title, 0 = anything else.
+            // Ties broken by list order, which roughly tracks bus registration.
+            let rank = 0;
+            if (hasTitle && p.isPlaying) rank = 2;
+            else if (hasTitle) rank = 1;
+            if (rank > bestRank) { best = p; bestRank = rank; }
+        }
+        root.musicPlayer  = best;
+        root.musicTitle   = best ? (best.trackTitle  || "") : "";
+        root.musicArtist  = best ? (best.trackArtist || "") : "";
+        root.musicPlaying = best ? !!best.isPlaying : false;
+    }
+
+    function musicToggle() {
+        if (root.musicPlayer && root.musicPlayer.canTogglePlaying) root.musicPlayer.togglePlaying();
+    }
+    function musicNext() {
+        if (root.musicPlayer && root.musicPlayer.canGoNext) root.musicPlayer.next();
+    }
+    function musicPrev() {
+        if (root.musicPlayer && root.musicPlayer.canGoPrevious) root.musicPlayer.previous();
+    }
+
+    Item {
+        visible: false
+        Repeater {
+            model: Mpris.players
+            delegate: Item {
+                required property MprisPlayer modelData
+                Connections {
+                    target: modelData
+                    function onPostTrackChanged()     { root.refreshMusic(); }
+                    function onPlaybackStateChanged() { root.refreshMusic(); }
+                }
+                Component.onCompleted:   root.refreshMusic()
+                Component.onDestruction: root.refreshMusic()
+            }
+        }
     }
 }

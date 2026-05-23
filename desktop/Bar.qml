@@ -189,10 +189,85 @@ PanelWindow {
             }
         }
 
+        // Now-playing pill, anchored to the bar's right edge so it sits
+        // outside (to the right of) the system-icons cluster. The
+        // GridLayout reserves room for it via an enlarged rightMargin when
+        // visible so the icons stop short and don't overlap. Sits above
+        // the GridLayout (same z trick the clockItem uses).
+        Item {
+            id: musicItem
+            visible: bar.root.isHorizontal && bar.root.musicTitle.length > 0
+            anchors.right: parent.right
+            anchors.rightMargin: bar.cloudMode ? bar.cloudAir + bar.cloudPad + 2 : 10
+            anchors.verticalCenter: parent.verticalCenter
+            height: 16
+            width: musicPill.width
+            z: 10
+
+            readonly property string tipText: bar.root.musicArtist.length > 0
+                                              ? bar.root.musicTitle + " - " + bar.root.musicArtist
+                                              : bar.root.musicTitle
+
+            Rectangle {
+                id: musicPill
+                anchors.verticalCenter: parent.verticalCenter
+                width: musicLabel.width + 14
+                height: parent.height
+                radius: height / 2
+                color: bar.root.accent
+                opacity: musicMouse.containsMouse ? 1.0 : 0.9
+                Behavior on opacity { NumberAnimation { duration: 180 } }
+
+                Text {
+                    id: musicLabel
+                    anchors.centerIn: parent
+                    // Hard cap on the text portion; outer Item width
+                    // tracks this + 14px of pill padding. ElideRight
+                    // draws "…" when the title exceeds the cap.
+                    width: Math.min(implicitWidth, 140)
+                    text: bar.root.musicTitle
+                    color: bar.root.paper
+                    font.family: bar.root.mono
+                    font.pixelSize: 10
+                    font.weight: Font.Medium
+                    elide: Text.ElideRight
+                }
+            }
+
+            Timer {
+                id: musicTipDelay
+                interval: 320
+                onTriggered: {
+                    const p = musicItem.mapToItem(null, musicItem.width / 2, musicItem.height / 2);
+                    bar.root.showTooltip(musicItem.tipText, p.x, p.y);
+                }
+            }
+
+            MouseArea {
+                id: musicMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                cursorShape: Qt.PointingHandCursor
+                onEntered: musicTipDelay.restart()
+                onExited:  { musicTipDelay.stop(); bar.root.hideTooltip(musicItem.tipText); }
+                onClicked: (e) => {
+                    musicTipDelay.stop();
+                    bar.root.hideTooltip(musicItem.tipText);
+                    if (e.button === Qt.RightButton)       bar.root.musicNext();
+                    else if (e.button === Qt.MiddleButton) bar.root.musicPrev();
+                    else                                    bar.root.musicToggle();
+                }
+            }
+        }
+
         GridLayout {
             anchors.fill: parent
             anchors.leftMargin:   bar.root.isHorizontal ? (bar.cloudMode ? bar.cloudAir + bar.cloudPad : 10) : 0
-            anchors.rightMargin:  bar.root.isHorizontal ? (bar.cloudMode ? bar.cloudAir + bar.cloudPad : 10) : 0
+            anchors.rightMargin:  bar.root.isHorizontal
+                                  ? ((bar.cloudMode ? bar.cloudAir + bar.cloudPad : 10)
+                                     + (musicItem.visible ? musicItem.width + 8 : 0))
+                                  : 0
             anchors.topMargin:    bar.root.isHorizontal
                                   ? (bar.cloudMode
                                      ? (bar.root.barEdge === "top" ? bar.cloudAir + bar.cloudPad : bar.cloudInnerAir + bar.cloudPad)
