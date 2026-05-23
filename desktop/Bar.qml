@@ -215,26 +215,41 @@ PanelWindow {
             Rectangle {
                 id: musicPill
                 anchors.verticalCenter: parent.verticalCenter
-                width: musicLabel.width + 14
+                width: musicRow.width + 12
                 height: parent.height
                 radius: height / 2
                 color: bar.root.accent
                 opacity: musicMouse.containsMouse ? 1.0 : 0.9
                 Behavior on opacity { NumberAnimation { duration: 180 } }
 
-                Text {
-                    id: musicLabel
+                Row {
+                    id: musicRow
                     anchors.centerIn: parent
-                    // Hard cap on the text portion; outer Item width
-                    // tracks this + 14px of pill padding. ElideRight
-                    // draws "…" when the title exceeds the cap.
-                    width: Math.min(implicitWidth, 140)
-                    text: bar.root.musicTitle
-                    color: bar.root.paper
-                    font.family: bar.root.mono
-                    font.pixelSize: 10
-                    font.weight: Font.Medium
-                    elide: Text.ElideRight
+                    spacing: 5
+
+                    Text {
+                        id: musicIcon
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: bar.root.icoMusic
+                        color: bar.root.paper
+                        font.family: bar.root.mono
+                        font.pixelSize: 9
+                    }
+
+                    Text {
+                        id: musicLabel
+                        anchors.verticalCenter: parent.verticalCenter
+                        // Hard cap on the text portion; outer Item width
+                        // tracks this + 12px of pill padding. ElideRight
+                        // draws "…" when the title exceeds the cap.
+                        width: Math.min(implicitWidth, 140)
+                        text: bar.root.musicTitle
+                        color: bar.root.paper
+                        font.family: bar.root.mono
+                        font.pixelSize: 10
+                        font.weight: Font.Medium
+                        elide: Text.ElideRight
+                    }
                 }
             }
 
