@@ -20,6 +20,9 @@ https://github.com/user-attachments/assets/a5bf641b-ccff-41bd-a14c-619ed5c3321a
 | [`quickapps/`](./quickapps) | Radial quick-app launcher. Eight to ten favourite apps arranged around a single faint indigo ring with kanji counter and serif typography. Reads `~/.config/omarchy-quickapps/apps.json`; bind to a Hyprland key for a Spotlight-style launch. |
 | [`screensaver/`](./screensaver) | Fullscreen shader screensaver with a retro-computing / hacker bent. Eleven GLSL programs (plasma, fluid, transparent CRT overlay, digital rain, xxd hex dump, stack-smash visualiser, Space Invaders attract, DOOM fire, fake terminal, Mr. Robot hacking sequence, Conway's Life) cross-fade on a 22 s cycle, all tinted live from the omarchy palette. Life uses a recursive ShaderEffectSource for cell-state feedback; the rest are stateless. IPC-triggered: `qs -c screensaver ipc call saver toggle`. Any input dismisses; `1`-`9` jumps directly, Tab cycles, `ipc call saver pick 9` / `pick 10` selects the over-flow slots. |
 | [`backgrounds/`](./backgrounds) | Subtle fluid-shader wallpaper. Ten low-contrast GLSL backgrounds (drift, veil, mist, ripple, silk, caustics, breath, smoke, dunes, aurora) cycle every 90 s with a 4 s cross-fade, all tinted from the omarchy palette. Runs on the Wayland Background layer in place of omarchy's wallpaper. IPC: `qs -c backgrounds ipc call bg next \| pick N \| hold \| cycle \| reload`. |
+| [`winamp-background/`](./winamp-background) | Classic Winamp 2.x LED-matrix spectrum analyser as a wallpaper. Reads `cliamp visstream` NDJSON, renders 64 stacked-block bars with a green/yellow/red gradient and falling peak markers. Sits on the Wayland Background layer. |
+| [`gamehud/`](./gamehud) | Cockpit HUD pinned top-right that fades in only while a game-class window is focused. Tails Hyprland's `.socket2.sock` for `activewindow` events and matches the class against a regex list (override at `~/.config/quickshell/gamehud/games.json`). Surfaces CPU%, RAM, and Nvidia GPU util / temp / power; click-through via empty input region so the game keeps mouse and keyboard. IPC: `qs -c gamehud ipc call hud show \| hide \| toggle \| peek \| reloadConfig`. |
+| [`expose/`](./expose) | Mission-Control-style workspace overview with real thumbnails. A background daemon tails Hyprland's socket2 and runs `grim -o <mon> -s 0.35` on a 400ms debounce after workspace/window events, caching each workspace as `~/.cache/quickshell/expose/ws-N.png`. The IPC-triggered overlay tiles those screenshots in a grid, with a 2px accent ring drawn over the most-recently-focused window in each. Workspaces never visited this session fall back to a schematic view. Arrow keys / hjkl / Tab navigate, 1-9 jumps, click a window to focus it directly. IPC: `qs -c expose ipc call expose toggle`. Requires `grim`. |
 
 Each module is a self-contained Quickshell config rooted at `shell.qml`.
 
@@ -67,6 +70,16 @@ qs -n -d -c backgrounds
 # pick a specific one or pause cycling:
 #   qs -c backgrounds ipc call bg pick 4
 #   qs -c backgrounds ipc call bg hold
+
+# launch the game-mode HUD (auto-shows on game-class focus)
+qs -n -d -c gamehud
+# manual toggle:
+#   bind = SUPER SHIFT, G, exec, qs -c gamehud ipc call hud toggle
+
+# launch the workspace exposé (IPC-triggered)
+qs -n -d -c expose
+# bind to a Hyprland key:
+#   bind = SUPER, TAB, exec, qs -c expose ipc call expose toggle
 ```
 
 `-c <name>` resolves to `~/.config/quickshell/<name>/shell.qml`. `-d` daemonizes, `-n` makes it idempotent.
