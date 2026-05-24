@@ -16,10 +16,12 @@ import Quickshell.Io
 // Within "ok", `submitted` flips true on Enter and `running` tracks the
 // curl subprocess; once running flips back to false the answer is done.
 //
-// Privacy / RAM: callers can invoke shutdownIfUsed() on omni close to
-// stop the daemon, freeing the resident model weights (~2.5GB for
-// qwen2.5-coder:3b). The `_usedThisSession` flag guards against
-// shutting down a daemon the user didn't actually touch this session.
+// RAM: clear() invokes unloadIfUsed() to release the resident model
+// weights (~2 GB for qwen2.5-coder:3b) right after the user leaves
+// chat mode. The `_usedThisSession` flag guards against unloading a
+// model the user warmed via some other tool before opening the
+// palette. The ollama daemon itself stays running - we manage only
+// our use of it.
 Item {
     id: ollamaChat
 
@@ -35,6 +37,13 @@ Item {
 
     property int _gen: 0
     readonly property string model_: "qwen2.5-coder:3b"
+
+    // Tracks whether THIS session actually invoked inference (vs. just
+    // probed the daemon). Without it, leaving the palette while ollama
+    // ps already had the model warm from another tool would unload it
+    // and surprise the user. Set in submit(), cleared after the unload
+    // fires from clear().
+    property bool _usedThisSession: false
 
     // Emitted from submit() so callers can scroll to top / reset
     // state on each *new* submission specifically — not on every
@@ -63,6 +72,30 @@ Item {
         probeProc.running = false;
         ollamaChat.status = "";
         ollamaChat.refreshItems();
+        // If this session actually loaded the model (vs. just probed),
+        // ping ollama with keep_alive:0 so the ~2GB of weights are
+        // released right away instead of waiting for the daemon's
+        // default 5-minute idle timeout. Gated on _usedThisSession so
+        // we never unload a model the user warmed up via some other
+        // tool before opening the palette.
+        ollamaChat.unloadIfUsed();
+    }
+
+    // Posts a no-prompt generate with keep_alive:0, which ollama
+    // interprets as "unload this model immediately". Fire-and-forget,
+    // short timeout so a wedged daemon can't slow the palette close.
+    function unloadIfUsed() {
+        if (!ollamaChat._usedThisSession) return;
+        ollamaChat._usedThisSession = false;
+        const body = JSON.stringify({
+            model: ollamaChat.model_,
+            keep_alive: 0
+        });
+        unloadProc.command = ["curl", "-s", "--max-time", "2", "-X", "POST",
+            "http://localhost:11434/api/generate",
+            "-d", body];
+        unloadProc.running = false;
+        unloadProc.running = true;
     }
 
     function parseQuery(q) {
@@ -88,6 +121,7 @@ Item {
         if (ollamaChat.status !== "ok") return;
         if (ollamaChat.prompt.length === 0) return;
         ollamaChat.submitted = true;
+        ollamaChat._usedThisSession = true;
         ollamaChat.previewText = "";
         ollamaChat._gen += 1;
         chatProc.gen = ollamaChat._gen;
@@ -166,6 +200,16 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: { ollamaChat.status = this.text.trim(); }
         }
+    }
+
+    // Fire-and-forget keep_alive:0 unload. No stdout handler because
+    // we don't care what ollama says — the goal is just to free the
+    // RAM. max-time 2 keeps a stuck daemon from blocking palette
+    // close.
+    Process {
+        id: unloadProc
+        running: false
+        command: ["true"]
     }
 
     // Streaming inference via Ollama's HTTP API. SplitParser fires on
