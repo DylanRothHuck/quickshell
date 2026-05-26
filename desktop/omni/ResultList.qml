@@ -180,17 +180,21 @@ Item {
             text: {
                 const o = rl.omni;
                 if (o.tldrMode) {
-                    if (o.tldrTool.length === 0) return "$ COMMAND  ·  TLDR PREVIEW";
+                    if (o.tldrTool.length === 0) return "TLDR COMMAND  ·  TYPE TOOL NAME";
                     if (o.tldrRunning) return "FETCHING TLDR…";
                     return "NO TLDR PAGE";
                 }
-                if (o.chatMode) {
-                    if (o.chatPrompt.length === 0) return "? QUESTION  ·  LOCAL AI";
+                if (o.llmMode) {
+                    const cmd = o.cmdMode;
+                    if (o.chatPrompt.length === 0)
+                        return cmd ? "$ SHELL TASK  ·  LOCAL AI"
+                                   : "? QUESTION  ·  LOCAL AI";
                     if (o.chatStatus === "")    return "CHECKING OLLAMA…";
                     if (o.chatStatus !== "ok")  return "OLLAMA SETUP NEEDED";
-                    if (!o.chatSubmitted)        return "↵ TO ASK";
+                    if (!o.chatSubmitted)        return cmd ? "↵ TO GENERATE" : "↵ TO ASK";
                     if (o.chatRunning)           return "STREAMING…";
-                    return "READY  ·  EDIT TO ASK AGAIN";
+                    return cmd ? "READY  ·  EDIT TO REGENERATE"
+                               : "READY  ·  EDIT TO ASK AGAIN";
                 }
                 if (o.fileMode) {
                     if (o.query.length === 0) return "TYPE TO SEARCH ~";

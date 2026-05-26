@@ -31,7 +31,7 @@ Item {
             const o = pp.omni;
             const it = o.filteredItems[o.selectedIndex];
             if (o.tldrMode) return o.tldrTool;
-            if (o.chatMode) return o.chatModel;
+            if (o.llmMode) return o.chatModel;
             if (o.ghMode) return o.previewRepo;
             if (o.procMode) return it ? it.title : "";
             if (o.themeMode) return it ? it.title : "";
@@ -56,17 +56,25 @@ Item {
             const o = pp.omni;
             const it = o.filteredItems[o.selectedIndex];
             if (o.tldrMode) return o.tldrTool.length === 0
-                ? "type a command name after $"
+                ? "type a command name after `tldr `"
                 : "tldr  ·  ↵ opens terminal with command ready";
-            if (o.chatMode) {
-                if (o.chatPrompt.length === 0) return "type a question after ?";
+            if (o.llmMode) {
+                const cmd = o.cmdMode;
+                if (o.chatPrompt.length === 0)
+                    return cmd ? "describe a shell task after $"
+                               : "type a question after ?";
                 if (o.chatStatus === "")    return "probing local ollama…";
                 if (o.chatStatus === "no-ollama") return "install ollama first";
                 if (o.chatStatus === "no-daemon") return "↵ to start the ollama daemon";
                 if (o.chatStatus === "no-model")  return "↵ to pull " + o.chatModel + " (~1 GB)";
-                if (!o.chatSubmitted)        return "↵ to ask  ·  local, offline";
-                if (o.chatRunning)           return "streaming  ·  edit to ask again";
-                return "↵ done  ·  edit prompt and ↵ to ask again";
+                if (!o.chatSubmitted)
+                    return cmd ? "↵ to generate  ·  local, offline"
+                               : "↵ to ask  ·  local, offline";
+                if (o.chatRunning)
+                    return cmd ? "streaming  ·  edit to regenerate"
+                               : "streaming  ·  edit to ask again";
+                return cmd ? "↵ done  ·  edit task and ↵ to regenerate"
+                           : "↵ done  ·  edit prompt and ↵ to ask again";
             }
             if (o.ghMode) return o.previewRepoUrl;
             if (o.procMode) return it ? ("pid " + (it.pid || "") + "  ·  ↵ kills (SIGTERM)") : "";
@@ -111,10 +119,13 @@ Item {
                     if (o.tldrTool.length === 0) return "TYPE A COMMAND";
                     return o.tldrRunning ? "FETCHING…" : "NO TLDR PAGE";
                 }
-                if (o.chatMode) {
-                    if (o.chatPrompt.length === 0) return "TYPE A QUESTION";
+                if (o.llmMode) {
+                    if (o.chatPrompt.length === 0)
+                        return o.cmdMode ? "DESCRIBE A SHELL TASK" : "TYPE A QUESTION";
                     if (o.chatStatus === "") return "CHECKING…";
-                    if (!o.chatSubmitted) return "PRESS ENTER TO ASK";
+                    if (!o.chatSubmitted)
+                        return o.cmdMode ? "PRESS ENTER TO GENERATE"
+                                         : "PRESS ENTER TO ASK";
                     return o.chatRunning ? "STREAMING…" : "DONE";
                 }
                 if (o.ghMode)    return "SELECT A REPO";
@@ -241,7 +252,7 @@ Item {
         Flickable {
             id: chatPreviewScroll
             anchors.fill: parent
-            visible: pp.omni.chatMode && pp.omni.previewHasContent
+            visible: pp.omni.llmMode && pp.omni.previewHasContent
             contentWidth: width
             contentHeight: chatPreviewEdit.implicitHeight
             clip: true

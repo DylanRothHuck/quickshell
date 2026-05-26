@@ -1,10 +1,14 @@
 import QtQuick
 import Quickshell.Io
 
-// Local-LLM chat backend for the omni-menu, triggered by a `?` query
-// prefix. Mirrors TldrSearch's shape: a synthetic single-row item plus
-// a streamed preview body. The HTTP API at localhost:11434 streams
-// NDJSON token chunks which a SplitParser appends to previewText.
+// Local-LLM backend for the omni-menu. Two modes share the same
+// process / probe / streaming machinery:
+//   "chat"     - triggered by `? <question>` for general Q&A
+//   "command"  - triggered by `$ <task>` for shell-command suggestions
+// Only the system prompt and the placeholder copy differ. Mirrors
+// TldrSearch's shape: a synthetic single-row item plus a streamed
+// preview body. The HTTP API at localhost:11434 streams NDJSON token
+// chunks which a SplitParser appends to previewText.
 //
 // State machine (status property):
 //   ""           probe still running (transient)
@@ -27,6 +31,10 @@ Item {
 
     required property string query
     required property bool active
+    // "chat" (default, `?` prefix) or "command" (`$` prefix). The
+    // mode steers which trigger character parseQuery accepts and
+    // which system prompt the model receives.
+    property string mode: "chat"
 
     property var items: []
     property string previewText: ""
@@ -37,6 +45,7 @@ Item {
 
     property int _gen: 0
     readonly property string model_: "qwen3.5:0.8b"
+    readonly property string triggerChar: ollamaChat.mode === "command" ? "$" : "?"
 
     // Tracks whether THIS session actually invoked inference (vs. just
     // probed the daemon). Without it, leaving the palette while ollama
@@ -49,11 +58,12 @@ Item {
     // state on each *new* submission specifically — not on every
     // prompt edit (which also flips `submitted` false→true→false).
     signal promptSubmitted()
-    // Steers the model toward devrel-style answers: lead with the
-    // command, use fenced code blocks, no marketing fluff or preamble.
-    // Aggressive and concrete because small models follow specific
-    // directives better than abstract ones like "be brief".
-    readonly property string systemPrompt:
+    // Chat-mode prompt. Steers the model toward devrel-style answers:
+    // lead with the command, use fenced code blocks, no marketing
+    // fluff or preamble. Aggressive and concrete because small models
+    // follow specific directives better than abstract ones like "be
+    // brief".
+    readonly property string chatSystemPrompt:
           "You are a terse Linux and CLI assistant for an Arch / Hyprland user. "
         + "Reply in devrel style: short, scannable, no preamble, no apologies. "
         + "Lead with the answer or the exact command. "
@@ -61,6 +71,23 @@ Item {
         + "Use plain hyphens (-), never em dashes. "
         + "If you don't know, say so in one line. "
         + "Skip restating the question."
+
+    // Command-mode prompt. Output is one shell command (or a
+    // pipeline / && chain) inside a single fenced block, nothing else.
+    // No prose lets the user copy-paste straight to a terminal.
+    readonly property string commandSystemPrompt:
+          "You are a Linux shell expert helping an Arch / Hyprland user. "
+        + "Given the user's task, output ONE concrete shell command that "
+        + "accomplishes it. Combine multiple steps with `&&` or `|`. "
+        + "Wrap the command in a single fenced ```bash``` block. "
+        + "No prose, no explanation, no preamble, no trailing notes. "
+        + "Prefer GNU/coreutils. Quote arguments that need it. "
+        + "If the task is unclear or unsafe, output `# unclear` instead."
+
+    readonly property string systemPrompt:
+        ollamaChat.mode === "command"
+            ? ollamaChat.commandSystemPrompt
+            : ollamaChat.chatSystemPrompt
 
     function clear() {
         ollamaChat.items = [];
@@ -99,16 +126,19 @@ Item {
     }
 
     function parseQuery(q) {
-        if (q.charAt(0) !== "?") return null;
+        if (q.charAt(0) !== ollamaChat.triggerChar) return null;
         return { prompt: q.substring(1).trim() };
     }
 
     function refreshItems() {
         if (!ollamaChat.active) { ollamaChat.items = []; return; }
         const empty = ollamaChat.prompt.length === 0;
+        const placeholder = ollamaChat.mode === "command"
+            ? "describe a shell task after $"
+            : "type a question after ?";
         ollamaChat.items = [{
             title: "ollama " + ollamaChat.model_,
-            comment: empty ? "type a question after ?" : ollamaChat.prompt,
+            comment: empty ? placeholder : ollamaChat.prompt,
             keywords: "",
             category: "ollama",
             icon: "󱚤",
@@ -184,6 +214,21 @@ Item {
             chatProc.running = false;
             ollamaChat.refreshItems();
         }
+    }
+
+    // Mode flip mid-activation (user swapped `?` <-> `$` without
+    // closing the palette). The system prompt has changed, so any
+    // in-flight response from the previous mode is now misaligned.
+    // Cancel it and resync prompt from the new query shape.
+    onModeChanged: {
+        if (!ollamaChat.active) return;
+        ollamaChat.submitted = false;
+        ollamaChat.previewText = "";
+        ollamaChat._gen += 1;
+        chatProc.running = false;
+        const parsed = ollamaChat.parseQuery(ollamaChat.query);
+        ollamaChat.prompt = parsed ? parsed.prompt : "";
+        ollamaChat.refreshItems();
     }
 
     // Readiness probe — runs once per chatMode activation. Cheap

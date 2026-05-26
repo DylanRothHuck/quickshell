@@ -98,13 +98,20 @@ Item {
     // to nav telemetry for instantaneous state; clicking one drops an
     // expanded detail panel below the grid with that tile's adjustments.
     readonly property bool quickMode: root.categoryFilter === "Quick"
-    // Query-shape mode: `$ rg` pivots to an inline tldr preview. Lives
-    // alongside the category drills but triggers off the query itself,
-    // so the user can pivot in from any drill without going to root.
-    readonly property bool tldrMode: root.query.charAt(0) === "$"
-    // Sibling query-shape mode: `? <question>` pivots to a local
-    // Ollama chat preview against qwen3.5:0.8b.
+    // Query-shape modes. Each triggers off the query string directly,
+    // so the user can pivot in from any drill without going back to
+    // root.
+    //   `tldr <name>` -> inline tldr preview
+    //   `? <q>`       -> local Ollama chat preview (qwen3.5:0.8b)
+    //   `$ <task>`    -> same model, but constrained to emit a shell
+    //                    command for the described task
+    readonly property bool tldrMode:
+        root.query === "tldr" || root.query.substring(0, 5) === "tldr "
     readonly property bool chatMode: root.query.charAt(0) === "?"
+    readonly property bool cmdMode:  root.query.charAt(0) === "$"
+    // Either of the two LLM-backed modes - share the single OllamaChat
+    // instance below, differing only by system prompt.
+    readonly property bool llmMode:  root.chatMode || root.cmdMode
     // Live font multiplier — every `font.pixelSize` binding in this
     // file multiplies its base by this value. Ctrl++ / Ctrl+- nudge
     // it in 0.1 steps; Ctrl+= resets to 1.0. Clamped to keep the
@@ -202,7 +209,7 @@ Item {
     GhSearch {
         id: ghSearch
         query: root.query
-        active: root.ghMode && !root.tldrMode && !root.chatMode
+        active: root.ghMode && !root.tldrMode && !root.llmMode
         selectedItem: root.filteredItems[root.selectedIndex] || null
     }
     readonly property alias ghReady:        ghSearch.ready
@@ -227,7 +234,7 @@ Item {
         id: fileSearch
         query: root.query
         queryTokens: root.queryTokens
-        active: root.fileMode && !root.tldrMode && !root.chatMode
+        active: root.fileMode && !root.tldrMode && !root.llmMode
         selectedItem: root.filteredItems[root.selectedIndex] || null
     }
     readonly property alias fileItems:    fileSearch.items
@@ -239,7 +246,7 @@ Item {
 
     Processes {
         id: processes
-        active: root.procMode && !root.chatMode
+        active: root.procMode && !root.tldrMode && !root.llmMode
         selectedItem: root.filteredItems[root.selectedIndex] || null
     }
     readonly property alias procItems:    processes.items
@@ -249,7 +256,7 @@ Item {
 
     Themes {
         id: themes
-        active: root.themeMode && !root.chatMode
+        active: root.themeMode && !root.tldrMode && !root.llmMode
     }
     readonly property alias themeItems:   themes.items
     readonly property alias themeLoaded:  themes.loaded
@@ -265,11 +272,15 @@ Item {
     readonly property alias tldrPreview:  tldrSearch.previewText
     readonly property alias tldrTool:     tldrSearch.toolName
 
-    // Local-LLM chat preview. Triggered by `? <question>` in the query.
+    // Local-LLM preview. Triggered by `? <question>` (chat) or
+    // `$ <task>` (command). The mode property steers the system
+    // prompt and the placeholder copy; everything else (probe,
+    // streaming, unload-on-leave) is shared.
     OllamaChat {
         id: ollamaChat
         query: root.query
-        active: root.chatMode
+        active: root.llmMode
+        mode: root.cmdMode ? "command" : "chat"
     }
     readonly property alias chatItems:     ollamaChat.items
     readonly property alias chatRunning:   ollamaChat.running
@@ -279,10 +290,10 @@ Item {
     readonly property alias chatSubmitted: ollamaChat.submitted
     readonly property alias chatModel:     ollamaChat.model_
 
-    readonly property bool previewActive: root.tldrMode || root.chatMode || root.fileMode || root.ghMode || root.procMode || root.themeMode
+    readonly property bool previewActive: root.tldrMode || root.llmMode || root.fileMode || root.ghMode || root.procMode || root.themeMode
     readonly property bool previewHasContent: {
         if (root.tldrMode) return root.tldrPreview !== "";
-        if (root.chatMode) {
+        if (root.llmMode) {
             // Probing: no content yet. Status != "ok": show the
             // install/start/pull hint as content. OK + not submitted:
             // empty (the placeholder hint shows). OK + submitted:
@@ -561,8 +572,9 @@ Item {
         // tldr mode owns the query entirely — its synthetic row is the
         // only thing the list should show, scoring doesn't apply.
         if (root.tldrMode) return root.tldrItems;
-        // chat mode is the other query-shape mode; same one-row pivot.
-        if (root.chatMode) return root.chatItems;
+        // LLM modes are the other query-shape modes; same one-row
+        // pivot for both chat (`?`) and command (`$`).
+        if (root.llmMode) return root.chatItems;
         // File and GitHub modes are their own worlds: fd and gh already
         // did the filtering, so we just pass their results through.
         if (root.fileMode) return root.fileItems;
@@ -861,12 +873,13 @@ Item {
                                || (e2.key === Qt.Key_Tab && (e2.modifiers & Qt.ShiftModifier)))) {
                     root.moveQuickSelection(-1);
                     event.accepted = true;
-                } else if (root.chatMode && root.previewHasContent
+                } else if (root.llmMode && root.previewHasContent
                            && (e2.key === Qt.Key_Up || e2.key === Qt.Key_Down
                                || e2.key === Qt.Key_PageUp || e2.key === Qt.Key_PageDown
                                || e2.key === Qt.Key_Home || e2.key === Qt.Key_End
                                || e2.key === Qt.Key_Tab || e2.key === Qt.Key_Backtab)) {
-                    // chat mode: same scroll routing as tldr mode below.
+                    // chat / command mode: same scroll routing as
+                    // tldr mode below.
                     // List nav is a no-op here (single synthetic row).
                     const f = previewPaneInstance.chatFlickable;
                     const max = Math.max(0, f.contentHeight - f.height);
@@ -967,7 +980,7 @@ Item {
                     else /* Key_Equal without Shift */ root.fontScale = 1.0;
                     event.accepted = true;
                 } else if (e2.key === Qt.Key_C && (e2.modifiers & Qt.ControlModifier)
-                           && root.chatMode && root.chatPreview !== "") {
+                           && root.llmMode && root.chatPreview !== "") {
                     // Ctrl+C: if the user dragged a selection in the
                     // rendered RichText edit, copy that (lossy — Qt
                     // strips inline `code` backticks during conversion,

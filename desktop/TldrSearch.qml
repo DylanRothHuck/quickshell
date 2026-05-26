@@ -1,11 +1,13 @@
 import QtQuick
 import Quickshell.Io
 
-// tldr-backed inline CLI help. Triggered by a `$` query prefix in the
-// omni-menu. The single "result" row is synthetic; OmniMenu.activate()
-// special-cases `isTldr` and launches a floating terminal with the
-// command pre-typed at the readline prompt. The preview pane shows the
-// tldr markdown for the first word (the tool name).
+// tldr-backed inline CLI help. Triggered by a `tldr ` query prefix in
+// the omni-menu (the `$` prefix is now reserved for the local-LLM
+// command assistant). The single "result" row is synthetic;
+// OmniMenu.activate() special-cases `isTldr` and launches a floating
+// terminal with the command pre-typed at the readline prompt. The
+// preview pane shows the tldr markdown for the first word (the tool
+// name).
 Item {
     id: tldrSearch
 
@@ -36,13 +38,16 @@ Item {
         tldrProc.running = false;
     }
 
-    // Strip the leading "$" + whitespace. Return both the first word
-    // (the tldr lookup key) and the entire post-`$` text (what the
-    // user wants pre-typed at the terminal prompt). `parseQuery`
-    // returns null when the query isn't a tldr trigger.
+    // Strip the leading "tldr" prefix. Trigger is "tldr" exactly OR
+    // "tldr<space>…" so the user can pivot in cold with no arg. Return
+    // both the first word (the tldr lookup key) and the entire post-
+    // prefix text (what the user wants pre-typed at the terminal
+    // prompt). `parseQuery` returns null when the query isn't a tldr
+    // trigger - guards against "tldrfoo" matching as well as the old
+    // "$" prefix being grabbed by the LLM command mode instead.
     function parseQuery(q) {
-        if (q.charAt(0) !== "$") return null;
-        const rest = q.substring(1).trim();
+        if (q !== "tldr" && q.substring(0, 5) !== "tldr ") return null;
+        const rest = q.substring(4).trim();
         if (rest.length === 0) return { name: "", preFill: "" };
         const space = rest.indexOf(" ");
         const name = space >= 0 ? rest.substring(0, space) : rest;
