@@ -38,6 +38,7 @@ PanelWindow {
     // on each side along the bar axis, sliding toward the inner edge so
     // outer-side air sits between cloud and screen edge).
     Rectangle {
+        id: cloudBg
         visible: bar.cloudMode
         x: bar.cloudAir
         y: bar.innerSign === 1 ? bar.cloudAir : bar.cloudInnerAir
@@ -45,29 +46,56 @@ PanelWindow {
         height: bar.root.barHeight + 2 * bar.cloudPad
         radius: bar.root.cornerRadius
         color: bar.root.bg
-        opacity: bar.root.isIdle ? 0.7 : 1.0
-        Behavior on opacity {
-            NumberAnimation {
-                duration: bar.root.isIdle ? 6000 : 60
-                easing.type: bar.root.isIdle ? Easing.OutQuart : Easing.OutQuad
-            }
-        }
         z: 0
+        // Idle dim, slow 6s ease both ways. Driven by states/transitions rather
+        // than a Behavior with an isIdle-bound duration: that bound duration is
+        // re-evaluated in the same notify pass as the opacity write and lags one
+        // toggle behind, so each direction could inherit the other's speed.
+        // from/to pins each direction's duration.
+        opacity: 1.0
+        states: State {
+            name: "idle"
+            when: bar.root.isIdle
+            PropertyChanges { target: cloudBg; opacity: 0.7 }
+        }
+        transitions: [
+            Transition {
+                to: "idle"
+                NumberAnimation { property: "opacity"; duration: 6000; easing.type: Easing.OutQuart }
+            },
+            Transition {
+                from: "idle"
+                NumberAnimation { property: "opacity"; duration: 6000; easing.type: Easing.OutQuad }
+            }
+        ]
     }
 
     // Container for clock + modules + hairlines. In cloud mode the bg
     // becomes transparent so the cloud rectangle above shows through;
     // in slab mode this acts as the bar background.
     Rectangle {
+        id: slabBg
         anchors.fill: parent
         color: bar.cloudMode ? "transparent" : bar.root.bg
-        opacity: bar.cloudMode ? 1.0 : (bar.root.isIdle ? 0.7 : 1.0)
-        Behavior on opacity {
-            NumberAnimation {
-                duration: bar.root.isIdle ? 6000 : 60
-                easing.type: bar.root.isIdle ? Easing.OutQuart : Easing.OutQuad
-            }
+        // Slab-mode idle dim (cloud mode keeps this transparent + opaque; the
+        // cloudBg rectangle above handles the dim there). Same states/transitions
+        // approach as cloudBg, slow 6s ease in both directions.
+        opacity: 1.0
+        states: State {
+            name: "idle"
+            when: bar.root.isIdle && !bar.cloudMode
+            PropertyChanges { target: slabBg; opacity: 0.7 }
         }
+        transitions: [
+            Transition {
+                to: "idle"
+                NumberAnimation { property: "opacity"; duration: 6000; easing.type: Easing.OutQuart }
+            },
+            Transition {
+                from: "idle"
+                NumberAnimation { property: "opacity"; duration: 6000; easing.type: Easing.OutQuad }
+            }
+        ]
 
         // 静 (stillness) mark, parked in the bar's trailing corner.
         Text {
