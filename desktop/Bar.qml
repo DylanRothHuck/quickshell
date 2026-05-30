@@ -240,15 +240,54 @@ PanelWindow {
                         id: musicLabel
                         anchors.verticalCenter: parent.verticalCenter
                         // Hard cap on the text portion; outer Item width
-                        // tracks this + 12px of pill padding. ElideRight
-                        // draws "…" when the title exceeds the cap.
-                        width: Math.min(implicitWidth, 140)
-                        text: bar.root.musicTitle
+                        // tracks this + 12px of pill padding. The font is
+                        // monospace, so we truncate to the exact character
+                        // count that fits 140px and append ".." rather than
+                        // letting a half-glyph bleed under the fade.
+                        readonly property int maxChars:
+                            Math.max(2, Math.floor(140 / chMetric.advanceWidth))
+                        readonly property bool truncated:
+                            bar.root.musicTitle.length > maxChars
+                        text: truncated
+                              ? bar.root.musicTitle.slice(0, maxChars - 2) + ".."
+                              : bar.root.musicTitle
                         color: bar.root.paper
                         font.family: bar.root.mono
                         font.pixelSize: 10
                         font.weight: Font.Medium
-                        elide: Text.ElideRight
+
+                        // One monospace cell, used to convert the 140px cap
+                        // into a character count.
+                        TextMetrics {
+                            id: chMetric
+                            font: musicLabel.font
+                            text: "0"
+                        }
+                    }
+                }
+
+                // Right-edge fade: only when the title is actually clipped.
+                // A horizontal transparent->accent gradient layered over the
+                // text tail dissolves it into the pill. Sits inside the pill
+                // so it inherits the hover opacity, and Qt.rgba(...,0) fades
+                // alpha only (no dark tint mid-gradient). Runs flush to the
+                // pill's right edge; matching radius keeps the rounded corner
+                // clean (the left corners round under the transparent stop).
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: parent.height
+                    width: 40
+                    radius: parent.radius
+                    visible: musicLabel.truncated
+                    // Front-loaded ramp: alpha climbs fast, then the right
+                    // ~40% sits fully on accent, so the tail reads as solidly
+                    // dissolved rather than a gentle wash.
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: Qt.rgba(bar.root.accent.r, bar.root.accent.g, bar.root.accent.b, 0) }
+                        GradientStop { position: 0.6; color: bar.root.accent }
+                        GradientStop { position: 1.0; color: bar.root.accent }
                     }
                 }
             }
