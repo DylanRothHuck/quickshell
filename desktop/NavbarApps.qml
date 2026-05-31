@@ -18,7 +18,9 @@ Item {
         { target: "screenshots", title: "Screenshots", icon: "󰄀", category: "Capture",
           keywords: "screenshots browse view gallery thumbnails recent" },
         { target: "videos",      title: "Videos",      icon: "󰕧", category: "Capture",
-          keywords: "videos browse view gallery thumbnails recordings recent screen record" }
+          keywords: "videos browse view gallery thumbnails recordings recent screen record" },
+        { target: "bar",         title: "Bar Style",   icon: "󰍜", category: "Toggle", verb: "toggle",
+          keywords: "bar style navbar variant switch toggle hackerman zen terminal hacker mr robot jack ryan tactical theme face" }
     ]
 
     readonly property var items: Data.annotate(candidates.map(c => ({
@@ -26,7 +28,7 @@ Item {
         icon: c.icon,
         category: c.category,
         keywords: c.keywords,
-        exec: "qs -c desktop ipc call " + c.target + " open"
+        exec: "qs -c desktop ipc call " + c.target + " " + (c.verb || "open")
     })))
 
     // Kept for callers that still nudge a refresh — now a no-op.

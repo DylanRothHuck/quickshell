@@ -77,6 +77,52 @@ Item {
         return ({top: "↑", right: "→", bottom: "↓", left: "←"})[root.barEdge] || "?";
     }
 
+    // ---------- Bar variant ----------
+    // Which bar face is rendered. "zen" is the original 静 minimalist bar;
+    // "hackerman" is the tactical/terminal readout (Mr. Robot / Jack Ryan
+    // veins). Both surfaces are always instantiated below and gate on this
+    // string via `visible`; an unmapped layer-surface reserves no exclusive
+    // zone, so exactly one bar owns the edge at a time.
+    //
+    // Persisted to its own one-line state file (same scheme as Theme's
+    // corner toggle) so the choice survives a relogin. Read once at startup
+    // via cat — a FileView's initial load races property assignment in some
+    // Quickshell builds and can clobber the value back to the default.
+    readonly property var barVariants: ["zen", "hackerman"]
+    readonly property string barVariantStatePath:
+        Quickshell.env("HOME") + "/.local/state/quickshell-desktop/bar-variant"
+    property string barVariant: "zen"
+
+    function setBarVariant(name) {
+        const want = root.barVariants.indexOf(name) !== -1 ? name : "zen";
+        root.barVariant = want;
+        barVariantWriter.command = ["bash", "-lc",
+            "mkdir -p " + JSON.stringify(root.barVariantStatePath.replace(/\/[^/]+$/, ""))
+            + " && printf '%s' " + JSON.stringify(want)
+            + " > " + JSON.stringify(root.barVariantStatePath)];
+        barVariantWriter.running = false;
+        barVariantWriter.running = true;
+    }
+    function cycleBarVariant() {
+        const i = root.barVariants.indexOf(root.barVariant);
+        root.setBarVariant(root.barVariants[(i + 1) % root.barVariants.length]);
+    }
+
+    Process { id: barVariantWriter; running: false }
+    Process {
+        id: barVariantReader
+        running: true
+        command: ["cat", root.barVariantStatePath]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const v = this.text.trim();
+                if (root.barVariants.indexOf(v) !== -1) root.barVariant = v;
+            }
+        }
+        // Missing file -> keep the "zen" default.
+        onExited: function(code) { if (code !== 0) root.barVariant = "zen"; }
+    }
+
     // ---------- Tooltips ----------
     // A single overlay panel reads these and renders the label near the
     // hovered icon. Positions are bar-window-local; the overlay translates
@@ -1672,7 +1718,10 @@ Item {
     }
 
     // ---------- Surfaces ----------
-    Bar              { root: root }
+    // Both bar faces are instantiated; only the one matching barVariant maps
+    // to the edge (the other is an unmapped, zero-exclusive-zone window).
+    Bar              { root: root; visible: root.barVariant === "zen" }
+    BarHacker        { root: root; visible: root.barVariant === "hackerman" }
     TooltipOverlay   { root: root }
     CalendarPopup    { root: root }
     ScreenshotsPopup { root: root }
@@ -1751,6 +1800,17 @@ Item {
         }
         function open(): void  { root.openCalendar(); }
         function close(): void { root.calendarVisible = false; }
+    }
+
+    // Bar face switch. Toggle from a keybind, or jump straight to one:
+    //   bind = SUPER SHIFT, B, exec, qs -c desktop ipc call bar toggle
+    // Also surfaced as a "Bar Style" row in the omni palette.
+    IpcHandler {
+        target: "bar"
+        function toggle(): void    { root.cycleBarVariant(); }
+        function set(name: string): void { root.setBarVariant(name); }
+        function zen(): void       { root.setBarVariant("zen"); }
+        function hackerman(): void { root.setBarVariant("hackerman"); }
     }
 
     // ---------- MPRIS (now playing) ----------

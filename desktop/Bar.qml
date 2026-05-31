@@ -33,6 +33,14 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "omarchy-menu"
 
+    // Re-claim the popup anchors when this face becomes the visible one
+    // (the sibling BarHacker registers its own items while it's up). Popups
+    // read these at open time, so whoever is mapped must own them.
+    onVisibleChanged: if (visible) {
+        bar.root.calendarAnchorItem = clockItem;
+        bar.root.weatherAnchorItem = weatherMod;
+    }
+
     // In cloud mode the slab bg is replaced by a single rounded backdrop
     // sized to match the inner bar (barHeight tall, with cloudAir margins
     // on each side along the bar axis, sliding toward the inner edge so
