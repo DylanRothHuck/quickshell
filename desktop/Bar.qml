@@ -233,7 +233,21 @@ PanelWindow {
         // the GridLayout (same z trick the clockItem uses).
         Item {
             id: musicItem
-            visible: bar.root.isHorizontal && bar.root.musicTitle.length > 0
+            // `present` is the logical "show the pill" state; the item lingers
+            // a beat past it (openW > 0.5) so the closing slide can finish
+            // before it leaves the layout.
+            readonly property bool present: bar.root.isHorizontal && bar.root.musicTitle.length > 0
+            // Natural pill width (icon + label + 12px padding). The +8 folds
+            // in the gap to the icon cluster so the reservation below tracks a
+            // single animated number — no 8px snap when the pill maps/unmaps.
+            readonly property real contentW: musicRow.width + 12
+            property real openW: present ? contentW + 8 : 0
+            // One Behavior drives all three motions: slide open on track
+            // start, ease between widths on a title change, slide shut on
+            // stop. 220ms OutCubic — a short, settled glide.
+            Behavior on openW { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+
+            visible: present || openW > 0.5
             anchors.right: parent.right
             anchors.rightMargin: bar.cloudMode ? bar.cloudAir + bar.cloudPad + 2 : 10
             anchors.verticalCenter: parent.verticalCenter
@@ -241,7 +255,7 @@ PanelWindow {
             // pill sits on the same baseline as the rest of the bar row.
             anchors.verticalCenterOffset: -1
             height: 16
-            width: musicPill.width
+            width: openW
             z: 10
 
             readonly property string tipText: bar.root.musicArtist.length > 0
@@ -250,11 +264,17 @@ PanelWindow {
 
             Rectangle {
                 id: musicPill
+                // Pinned to the right edge so the pill grows leftward as the
+                // item widens; the 8px gap to the icon cluster sits to its
+                // left. clip masks the centred row to the animating width so
+                // the open reads as the pill inflating, not text spilling out.
+                anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: musicRow.width + 12
+                width: Math.max(0, parent.width - 8)
                 height: parent.height
                 radius: height / 2
                 color: bar.root.accent
+                clip: true
                 opacity: musicMouse.containsMouse ? 1.0 : 0.9
                 Behavior on opacity { NumberAnimation { duration: 180 } }
 
@@ -360,7 +380,7 @@ PanelWindow {
             anchors.leftMargin:   bar.root.isHorizontal ? (bar.cloudMode ? bar.cloudAir + bar.cloudPad : 10) : 0
             anchors.rightMargin:  bar.root.isHorizontal
                                   ? ((bar.cloudMode ? bar.cloudAir + bar.cloudPad : 10)
-                                     + (musicItem.visible ? musicItem.width + 8 : 0))
+                                     + musicItem.openW)
                                   : 0
             anchors.topMargin:    bar.root.isHorizontal
                                   ? (bar.cloudMode
