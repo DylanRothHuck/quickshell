@@ -3,10 +3,12 @@ import QtQuick
 CardWindow {
     id: calendarPopup
     required property var root
+    readonly property bool isWhiterose: root.barVariant === "whiterose"
 
     theme: root
+    plain: calendarPopup.isWhiterose
     revealed: root.calendarVisible
-    cardWidth: 322
+    cardWidth: calendarPopup.isWhiterose ? 300 : 322
     layerNamespace: "omarchy-calendar"
     title: calendarPopup.root.calendarMonthName
     subtitle: calendarPopup.root.calendarYear
@@ -20,18 +22,21 @@ CardWindow {
         CalendarChevron {
             root: calendarPopup.root
             text: "‹"
+            hotColor: calendarPopup.isWhiterose ? calendarPopup.root.ink : calendarPopup.root.seal
             onTriggered: { calendarPopup.root.calendarMonthOffset--; calendarPopup.root.calendarTick++; calendarPopup.root.selectedDay = 0; }
         }
         CalendarChevron {
             root: calendarPopup.root
             text: "•"
             restColor: calendarPopup.root.inkDeep
+            hotColor: calendarPopup.isWhiterose ? calendarPopup.root.ink : calendarPopup.root.seal
             font.pixelSize: 19
             onTriggered: { calendarPopup.root.calendarMonthOffset = 0; calendarPopup.root.calendarTick++; calendarPopup.root.selectedDay = (new Date()).getDate(); }
         }
         CalendarChevron {
             root: calendarPopup.root
             text: "›"
+            hotColor: calendarPopup.isWhiterose ? calendarPopup.root.ink : calendarPopup.root.seal
             onTriggered: { calendarPopup.root.calendarMonthOffset++; calendarPopup.root.calendarTick++; calendarPopup.root.selectedDay = 0; }
         }
     }
@@ -46,7 +51,7 @@ CardWindow {
 
     Column {
         width: parent.width
-        spacing: 12
+        spacing: calendarPopup.isWhiterose ? 10 : 12
 
         Rectangle {
             width: parent.width
@@ -54,8 +59,6 @@ CardWindow {
             color: calendarPopup.root.sep
         }
 
-        // Weekday row (Monday first). Sat/Sun tinted seal so the week's
-        // shape is readable at a glance.
         Row {
             width: parent.width
             spacing: 0
@@ -70,8 +73,10 @@ CardWindow {
                     Text {
                         anchors.centerIn: parent
                         text: modelData
-                        color: index >= 5 ? calendarPopup.root.seal : calendarPopup.root.inkDeep
-                        opacity: index >= 5 ? 0.85 : 0.7
+                        color: calendarPopup.isWhiterose
+                               ? calendarPopup.root.inkDeep
+                               : (index >= 5 ? calendarPopup.root.seal : calendarPopup.root.inkDeep)
+                        opacity: calendarPopup.isWhiterose ? 0.75 : (index >= 5 ? 0.85 : 0.7)
                         font.family: calendarPopup.root.mono
                         font.pixelSize: 12
                         font.letterSpacing: 2
@@ -106,23 +111,29 @@ CardWindow {
                     readonly property bool isSelected: isCurrentMonth && calendarPopup.root.selectedDay === modelData.day
 
                     readonly property color textColor: {
+                        if (calendarPopup.isWhiterose && isToday) return calendarPopup.root.bg;
                         if (isToday) return calendarPopup.root.seal.hsvValue < 0.5 ? calendarPopup.root.ink : calendarPopup.root.paper;
                         if (!isCurrentMonth) return calendarPopup.root.inkDeep;
+                        if (calendarPopup.isWhiterose) return (isWeekend || isHoliday) ? calendarPopup.root.inkDeep : calendarPopup.root.ink;
                         return (isWeekend || isHoliday) ? calendarPopup.root.seal : calendarPopup.root.ink;
                     }
 
                     Rectangle {
                         anchors.centerIn: parent
-                        width: 29; height: 29; radius: 14
-                        color: calendarPopup.root.seal
+                        width: calendarPopup.isWhiterose ? 32 : 29
+                        height: calendarPopup.isWhiterose ? 28 : 29
+                        radius: calendarPopup.isWhiterose ? 0 : 14
+                        color: calendarPopup.isWhiterose ? calendarPopup.root.ink : calendarPopup.root.seal
                         visible: dayCell.isToday
                         antialiasing: true
                     }
 
                     Rectangle {
                         anchors.centerIn: parent
-                        width: 29; height: 29; radius: 14
-                        color: Qt.rgba(calendarPopup.root.ink.r, calendarPopup.root.ink.g, calendarPopup.root.ink.b, 0.08)
+                        width: calendarPopup.isWhiterose ? 32 : 29
+                        height: calendarPopup.isWhiterose ? 28 : 29
+                        radius: calendarPopup.isWhiterose ? 0 : 14
+                        color: Qt.rgba(calendarPopup.root.ink.r, calendarPopup.root.ink.g, calendarPopup.root.ink.b, calendarPopup.isWhiterose ? 0.06 : 0.08)
                         visible: dayMouse.containsMouse && !dayCell.isToday && dayCell.isCurrentMonth
                         antialiasing: true
                         Behavior on opacity { NumberAnimation { duration: 120 } }
@@ -130,9 +141,11 @@ CardWindow {
 
                     Rectangle {
                         anchors.centerIn: parent
-                        width: 29; height: 29; radius: 14
+                        width: calendarPopup.isWhiterose ? 32 : 29
+                        height: calendarPopup.isWhiterose ? 28 : 29
+                        radius: calendarPopup.isWhiterose ? 0 : 14
                         color: "transparent"
-                        border.color: calendarPopup.root.seal
+                        border.color: calendarPopup.isWhiterose ? calendarPopup.root.ink : calendarPopup.root.seal
                         border.width: 1
                         visible: dayCell.isSelected && !dayCell.isToday
                         antialiasing: true
@@ -145,7 +158,7 @@ CardWindow {
                         opacity: dayCell.isCurrentMonth ? 1.0 : 0.35
                         font.family: calendarPopup.root.mono
                         font.pixelSize: 15
-                        font.weight: dayCell.isToday ? Font.Medium : Font.Light
+                        font.weight: dayCell.isToday || (calendarPopup.isWhiterose && dayCell.isSelected) ? Font.Medium : Font.Light
                     }
 
                     MouseArea {
@@ -183,7 +196,7 @@ CardWindow {
             width: parent.width
             visible: calendarPopup.root.selectedDayHoliday.length > 0
             text: calendarPopup.root.selectedDayHoliday.toUpperCase()
-            color: calendarPopup.root.seal
+            color: calendarPopup.isWhiterose ? calendarPopup.root.ink : calendarPopup.root.seal
             font.family: calendarPopup.root.mono
             font.pixelSize: 11
             font.letterSpacing: 2

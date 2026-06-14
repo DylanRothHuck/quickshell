@@ -36,6 +36,7 @@ Item {
     property color inkDeep: "#c8c093"
     property color sumi:    "#a6a69c"
     property color indigo:  "#658594"
+    property color green:   "#a9b665"
     property color sealRaw: "#c4746e"
     property real  driftAmount: 0
 

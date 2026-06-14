@@ -67,6 +67,7 @@ right  | weather | display | camera | filmstrip | sep | cpu | bt | wifi | audio 
 - Click audio for `omarchy-launch-audio`. Right-click toggles mute.
 - Click battery for the power menu.
 - Click the edge arrow to cycle the bar between top, right, bottom, left.
+- Cycle bar faces with `qs -c desktop ipc call bar toggle`; jump to the plain White Rose face with `qs -c desktop ipc call bar whiterose`.
 
 ## Palette
 

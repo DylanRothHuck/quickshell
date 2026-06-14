@@ -32,6 +32,7 @@ PanelWindow {
     property string subtitle: ""
     property string footer: ""
     property string layerNamespace: "omarchy-card"
+    property bool plain: false
     // Right-side header content (chevrons, refresh buttons, etc.). The
     // inline Component is instantiated as a Loader child; lexical scope
     // means ids declared in the popup file are reachable from inside.
@@ -82,7 +83,7 @@ PanelWindow {
         color: card.theme.bg
         border.color: card.theme.sep
         border.width: 1
-        radius: card.theme.cornerRadius
+        radius: card.plain ? 0 : card.theme.cornerRadius
 
         x: {
             if (!card._anchored) return (parent.width - width) / 2;
@@ -134,8 +135,8 @@ PanelWindow {
         Column {
             id: bodyCol
             anchors.fill: parent
-            anchors.margins: 17
-            spacing: 12
+            anchors.margins: card.plain ? 14 : 17
+            spacing: card.plain ? 10 : 12
 
             Item {
                 width: parent.width
@@ -153,8 +154,8 @@ PanelWindow {
                         text: card.title
                         color: card.theme.ink
                         font.family: card.theme.mono
-                        font.pixelSize: 19
-                        font.letterSpacing: 4
+                        font.pixelSize: card.plain ? 15 : 19
+                        font.letterSpacing: card.plain ? 3 : 4
                         font.weight: Font.Medium
                     }
                     Text {

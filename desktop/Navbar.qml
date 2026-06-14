@@ -19,6 +19,7 @@ Item {
     readonly property color inkDeep: theme.inkDeep
     readonly property color sumi:    theme.inkDeep
     readonly property color indigo:  theme.indigo
+    readonly property color green:   theme.green
     readonly property color seal:    theme.seal
     readonly property color bg:      theme.bg
     readonly property color fg:      theme.fg
@@ -79,8 +80,8 @@ Item {
 
     // ---------- Bar variant ----------
     // Which bar face is rendered. "zen" is the original 静 minimalist bar;
-    // "hackerman" is the tactical/terminal readout (Mr. Robot / Jack Ryan
-    // veins). Both surfaces are always instantiated below and gate on this
+    // "hackerman" is the tactical/terminal readout; "whiterose" is a plain
+    // black-and-white editorial bar. All surfaces are always instantiated below and gate on this
     // string via `visible`; an unmapped layer-surface reserves no exclusive
     // zone, so exactly one bar owns the edge at a time.
     //
@@ -88,7 +89,7 @@ Item {
     // corner toggle) so the choice survives a relogin. Read once at startup
     // via cat — a FileView's initial load races property assignment in some
     // Quickshell builds and can clobber the value back to the default.
-    readonly property var barVariants: ["zen", "hackerman"]
+    readonly property var barVariants: ["zen", "hackerman", "whiterose"]
     readonly property string barVariantStatePath:
         Quickshell.env("HOME") + "/.local/state/quickshell-desktop/bar-variant"
     property string barVariant: "zen"
@@ -159,6 +160,7 @@ Item {
     property Item calendarAnchorItem: null
     property Item weatherAnchorItem:  null
     property Item displayAnchorItem:  null
+    property Item systemAnchorItem:   null
 
     function anchorPopupTo(item) {
         const p = item.mapToItem(null, item.width / 2, item.height / 2);
@@ -751,6 +753,13 @@ Item {
         displayProbe.running = true;
         root.displayRow = 0;
         root.displayVisible = true;
+    }
+
+    // ---------- System popup state ----------
+    property bool systemVisible: false
+    function openSystem() {
+        if (root.systemAnchorItem) root.anchorPopupTo(root.systemAnchorItem);
+        root.systemVisible = true;
     }
 
     function runSunset(verb) {
@@ -1718,11 +1727,13 @@ Item {
     }
 
     // ---------- Surfaces ----------
-    // Both bar faces are instantiated; only the one matching barVariant maps
+    // All bar faces are instantiated; only the one matching barVariant maps
     // to the edge (the other is an unmapped, zero-exclusive-zone window).
     Bar              { root: root; visible: root.barVariant === "zen" }
     BarHacker        { root: root; visible: root.barVariant === "hackerman" }
+    BarWhiterose     { root: root; visible: root.barVariant === "whiterose" }
     TooltipOverlay   { root: root }
+    SystemPopup      { root: root }
     CalendarPopup    { root: root }
     ScreenshotsPopup { root: root }
     VideosPopup      { root: root }
@@ -1802,6 +1813,17 @@ Item {
         function close(): void { root.calendarVisible = false; }
     }
 
+    IpcHandler {
+        target: "system"
+        function toggle(): void {
+            if (root.systemVisible) root.systemVisible = false;
+            else root.openSystem();
+        }
+        function open(): void  { root.openSystem(); }
+        function close(): void { root.systemVisible = false; }
+        function btop(): void  { root.run("omarchy-launch-or-focus-tui btop"); }
+    }
+
     // Bar face switch. Toggle from a keybind, or jump straight to one:
     //   bind = SUPER SHIFT, B, exec, qs -c desktop ipc call bar toggle
     // Also surfaced as a "Bar Style" row in the omni palette.
@@ -1811,6 +1833,8 @@ Item {
         function set(name: string): void { root.setBarVariant(name); }
         function zen(): void       { root.setBarVariant("zen"); }
         function hackerman(): void { root.setBarVariant("hackerman"); }
+        function whiterose(): void { root.setBarVariant("whiterose"); }
+        function plain(): void     { root.setBarVariant("whiterose"); }
     }
 
     // ---------- MPRIS (now playing) ----------

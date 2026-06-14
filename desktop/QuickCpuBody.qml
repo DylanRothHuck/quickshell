@@ -1,8 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 
-// CPU detail — live CPU + memory bars with a BTOP launch button. btop
-// is intentionally an external TUI (user choice); Enter fires it.
+// System detail - concise CPU/memory guidance with btop as the deeper view.
 Item {
     id: body
     required property var root
@@ -20,7 +19,7 @@ Item {
 
     function kbdHandle(event) {
         const k = event.key;
-        if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space) {
+        if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space || k === Qt.Key_B) {
             body._launch();
             return true;
         }
@@ -30,7 +29,6 @@ Item {
         if (body.nav) body.nav.run("omarchy-launch-or-focus-tui btop");
         body.close();
     }
-
     Column {
         id: col
         anchors.left: parent.left
@@ -41,18 +39,18 @@ Item {
 
         Repeater {
             model: [
-                { label: "CPU", value: body.nav ? body.nav.cpuVal : 0, threshold: 80 },
-                { label: "MEM", value: body.nav ? body.nav.memVal : 0, threshold: 80 }
+                { label: "CPU", value: body.nav ? Math.round(body.nav.cpuVal) : 0 },
+                { label: "MEM", value: body.nav ? Math.round(body.nav.memVal) : 0 }
             ]
             delegate: Item {
                 required property var modelData
                 width: col.width
-                height: 26
+                height: 32
 
                 Text {
                     id: lbl
                     anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.top: parent.top
                     text: modelData.label
                     color: body.root.inkDeep
                     font.family: body.root.mono
@@ -60,29 +58,25 @@ Item {
                     font.letterSpacing: 2
                 }
                 Rectangle {
-                    anchors.left: lbl.right
-                    anchors.leftMargin: 12
-                    anchors.right: valLbl.left
-                    anchors.rightMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: 6
-                    radius: 3
-                    color: Qt.rgba(body.root.ink.r, body.root.ink.g, body.root.ink.b, 0.10)
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.topMargin: 22
+                    height: 3
+                    color: Qt.rgba(body.root.ink.r, body.root.ink.g, body.root.ink.b, 0.14)
                     Rectangle {
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
                         width: parent.width * Math.max(0, Math.min(1, modelData.value / 100))
-                        radius: parent.radius
-                        color: modelData.value > modelData.threshold
-                               ? body.root.seal : body.root.ink
+                        color: body.root.ink
                         Behavior on width { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
                     }
                 }
                 Text {
                     id: valLbl
                     anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.top: parent.top
                     text: Math.round(modelData.value) + "%"
                     color: body.root.ink
                     font.family: body.root.mono
@@ -93,14 +87,44 @@ Item {
             }
         }
 
-        Flow {
+        Item {
             width: parent.width
-            spacing: 8
-            QuickButton {
-                root: body.root
-                glyph: "󰍛"
-                label: "BTOP"
-                selected: body.kbdIndex === 0
+            height: 30
+
+            Rectangle {
+                anchors.fill: parent
+                color: actionMouse.containsMouse || body.kbdIndex === 0
+                       ? Qt.rgba(body.root.ink.r, body.root.ink.g, body.root.ink.b, 0.06)
+                       : "transparent"
+                border.width: 1
+                border.color: actionMouse.containsMouse || body.kbdIndex === 0 ? body.root.ink : body.root.sep
+            }
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: 9
+                anchors.verticalCenter: parent.verticalCenter
+                text: "OPEN BTOP"
+                color: body.root.ink
+                font.family: body.root.mono
+                font.pixelSize: 10
+                font.letterSpacing: 2
+                font.weight: Font.Medium
+            }
+            Text {
+                anchors.right: parent.right
+                anchors.rightMargin: 9
+                anchors.verticalCenter: parent.verticalCenter
+                text: "DETAIL PROCESS VIEW"
+                color: body.root.inkDeep
+                font.family: body.root.mono
+                font.pixelSize: 10
+                font.letterSpacing: 1.2
+            }
+            MouseArea {
+                id: actionMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
                 onClicked: body._launch()
             }
         }
