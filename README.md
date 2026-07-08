@@ -20,7 +20,7 @@ This fork ([bjarneo/quickshell](https://github.com/bjarneo/quickshell)) adds:
 - **Wi-Fi, Bluetooth, power profiles, and sound cards** — added popups for network, audio device selection, and power-profile switching.
 - **Themes and wallpaper changer** — browse and apply omarchy themes and wallpapers directly from the palette.
 - **Redesigned top bar** — changed the bar style, removed sidebar options, made the music player module square.
-- **Removed indicators** — removed the lock screen, notification, and voxytype indicators from the bar.
+- **Added indicators** — lock screen, notification, and voxytype indicators added to the bar (they weren't working before).
 - **Brightness and volume OSD** — brightness and volume changes temporarily replace the center modules with a progress bar, then fade back.
 
 | Module | What it does |
