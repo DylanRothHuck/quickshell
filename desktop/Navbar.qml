@@ -2208,12 +2208,13 @@ Item {
     }
 
     // ---------- Surfaces ----------
+    // Bar faces are loaded lazily — only the active face is instantiated.
     // Popups are loaded on demand via Loader and destroyed when closed;
     // state lives on Navbar root so it survives the component teardown.
     // TooltipOverlay stays always active (lightweight, frequent use).
-    Bar              { root: root; visible: root.barVariant === "zen" }
-    BarHacker        { root: root; visible: root.barVariant === "hackerman" }
-    BarWhiterose     { root: root; visible: root.barVariant === "whiterose" }
+    Loader { active: root.barVariant === "zen";        sourceComponent: Bar          { root: root } }
+    Loader { active: root.barVariant === "hackerman";  sourceComponent: BarHacker    { root: root } }
+    Loader { active: root.barVariant === "whiterose";  sourceComponent: BarWhiterose { root: root } }
     TooltipOverlay   { root: root }
     Loader { active: root.systemVisible;       sourceComponent: SystemPopup      { root: root } }
     Loader { active: root.calendarVisible;     sourceComponent: CalendarPopup    { root: root } }
