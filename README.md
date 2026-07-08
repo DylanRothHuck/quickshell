@@ -1,5 +1,7 @@
 # quickshell
 
+> **Warning:** Built for omarchy **3.8.2** — not compatible with the upcoming omarchy **4.0.0** without changes.
+
 Personal [Quickshell](https://quickshell.outfoxxed.me) configs built for [omarchy](https://omarchy.org). They read the live omarchy palette at `~/.config/omarchy/current/theme/colors.toml`, so the bar and overlay restyle themselves whenever you run `omarchy theme set <name>`.
 
 
