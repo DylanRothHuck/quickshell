@@ -4,7 +4,7 @@ import Quickshell.Io
 
 CardWindow {
     id: wpPopup
-    required property var root
+    property var root: ({})
 
     theme: root
     revealed: root.wallpaperVisible

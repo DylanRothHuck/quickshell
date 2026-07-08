@@ -2,7 +2,7 @@ import QtQuick
 
 CardWindow {
     id: btPopup
-    required property var root
+    property var root: ({})
 
     theme: root
     revealed: root.btVisible

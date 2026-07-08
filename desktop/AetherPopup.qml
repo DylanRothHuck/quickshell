@@ -5,7 +5,7 @@ import Quickshell.Io
 // with thumbnail-driven palette extraction.
 CardWindow {
     id: aetherPopup
-    required property var root
+    property var root: ({})
 
     property string mode: "blueprints"
     readonly property bool wallhavenMode: mode === "wallhaven"

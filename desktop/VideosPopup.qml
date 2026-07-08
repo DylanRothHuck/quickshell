@@ -2,7 +2,7 @@ import QtQuick
 
 CardWindow {
     id: videosPopup
-    required property var root
+    property var root: ({})
 
     theme: root
     revealed: root.videosVisible

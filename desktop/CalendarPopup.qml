@@ -2,7 +2,7 @@ import QtQuick
 
 CardWindow {
     id: calendarPopup
-    required property var root
+    property var root: ({})
     readonly property bool isWhiterose: root.barVariant === "whiterose"
     readonly property int wrGap: 4
 

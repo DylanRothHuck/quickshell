@@ -2162,21 +2162,21 @@ Item {
     BarHacker        { root: root; visible: root.barVariant === "hackerman" }
     BarWhiterose     { root: root; visible: root.barVariant === "whiterose" }
     TooltipOverlay   { root: root }
-    SystemPopup      { root: root }
-    CalendarPopup        { root: root }
-    ScreenshotsPopup     { root: root }
-    VideosPopup          { root: root }
-    AetherPopup          { root: root }
-    DisplayPopup         { root: root }
-    WeatherPopup         { root: root }
-    PowerProfilePopup    { root: root }
-    WifiPopup            { root: root }
-    WifiSharePopup       { root: root }
-    BluetoothPopup       { root: root }
-    AudioPopup           { root: root }
-    PowerPopup           { root: root }
-    ThemePopup           { root: root }
-    WallpaperPopup       { root: root }
+    Loader { active: root.systemVisible;        source: "SystemPopup.qml";        onLoaded: item.root = root }
+    Loader { active: root.calendarVisible;      source: "CalendarPopup.qml";      onLoaded: item.root = root }
+    Loader { active: root.screenshotsVisible;   source: "ScreenshotsPopup.qml";   onLoaded: item.root = root }
+    Loader { active: root.videosVisible;        source: "VideosPopup.qml";        onLoaded: item.root = root }
+    Loader { active: root.aetherVisible;        source: "AetherPopup.qml";        onLoaded: item.root = root }
+    Loader { active: root.displayVisible;       source: "DisplayPopup.qml";       onLoaded: item.root = root }
+    Loader { active: root.weatherVisible;       source: "WeatherPopup.qml";       onLoaded: item.root = root }
+    Loader { active: root.powerProfileVisible;  source: "PowerProfilePopup.qml";  onLoaded: item.root = root }
+    Loader { active: root.wifiVisible;          source: "WifiPopup.qml";          onLoaded: item.root = root }
+    Loader { active: root.shareVisible;         source: "WifiSharePopup.qml";     onLoaded: item.root = root }
+    Loader { active: root.btVisible;            source: "BluetoothPopup.qml";     onLoaded: item.root = root }
+    Loader { active: root.audioVisible;         source: "AudioPopup.qml";         onLoaded: item.root = root }
+    Loader { active: root.powerVisible;         source: "PowerPopup.qml";         onLoaded: item.root = root }
+    Loader { active: root.themeVisible;         source: "ThemePopup.qml";         onLoaded: item.root = root }
+    Loader { active: root.wallpaperVisible;     source: "WallpaperPopup.qml";     onLoaded: item.root = root }
 
     // ---------- IPC ----------
     // Lets external keybinds drive the screenshots popup. Wire up in

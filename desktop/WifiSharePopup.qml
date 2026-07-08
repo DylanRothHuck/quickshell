@@ -2,7 +2,7 @@ import QtQuick
 
 CardWindow {
     id: sharePopup
-    required property var root
+    property var root: ({})
 
     theme: root
     revealed: root.shareVisible && root.shareSsid.length > 0

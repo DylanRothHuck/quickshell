@@ -2,7 +2,7 @@ import QtQuick
 
 CardWindow {
     id: systemPopup
-    required property var root
+    property var root: ({})
 
     theme: root
     plain: true

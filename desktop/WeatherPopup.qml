@@ -2,7 +2,7 @@ import QtQuick
 
 CardWindow {
     id: weatherPopup
-    required property var root
+    property var root: ({})
     readonly property bool isWhiterose: root.barVariant === "whiterose"
 
     theme: root
