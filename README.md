@@ -8,6 +8,16 @@ https://github.com/user-attachments/assets/a5bf641b-ccff-41bd-a14c-619ed5c3321a
 
 
 
+## Changes from original
+
+This fork ([bjarneo/quickshell](https://github.com/bjarneo/quickshell)) adds:
+
+- **Lazy-loading architecture** — bar faces (zen, hackerman, whiterose), popups (system, audio, weather, etc.), and the OmniMenu palette are created on-demand via `Loader` and kept alive, dramatically cutting initial memory.
+- **Consolidated probes** — six per-second telemetry probes merged into one combined probe, halving idle wake-ups.
+- **Workspace optimization** — workspace indicators reduced from 10 to 8, matching omarchy's workspace count.
+- **Required-property cleanup** — child components no longer use `required` for `root`/`theme`, making them independently loadable.
+- **Duplicate IpcHandler fix** — merged two `target: "audio"` IPC handlers into one, silencing the duplicate warning.
+
 | Module | What it does |
 | --- | --- |
 | [`desktop/`](./desktop) | Top bar plus omni-menu command palette in a single Quickshell process. Kanagawa Dragon layout on the live omarchy palette, kanji workspace markers, click-through popups for calendar / screenshots / display / weather / aether blueprints, and a fused command palette over installed apps and the omarchy-menu (synonyms — "wallpaper" finds Background, "reboot" finds Restart). |
