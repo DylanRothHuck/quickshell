@@ -19,6 +19,7 @@ Item {
 
     signal activated()
     signal rightActivated()
+    signal wheelActivated(int delta, real mouseX, real mouseY)
 
     Layout.alignment: root.isHorizontal ? Qt.AlignVCenter : Qt.AlignHCenter
     Layout.preferredWidth:  root.isHorizontal ? 24 : root.barHeight
@@ -75,5 +76,6 @@ Item {
             if (e.button === Qt.RightButton) modItem.rightActivated();
             else modItem.activated();
         }
+        onWheel: (wheel) => modItem.wheelActivated(wheel.angleDelta.y, wheel.x, wheel.y)
     }
 }

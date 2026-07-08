@@ -184,3 +184,68 @@ Useful when a theme stores its accent under a non-standard key, or when you want
 ## Going further
 
 If you find yourself maintaining a long fork of `Data.js`, the cleaner path is to split your additions into a separate JS module and merge them onto `omarchyItems` in `OmniMenu.qml`'s `Component.onCompleted`. That keeps upstream merges painless and your additions in one file.
+
+## Wi-Fi Hotspot
+
+Shares the laptop's Wi-Fi connection with other devices (phone, tablet, etc.) by creating a simultaneous STA+AP hotspot — your laptop stays connected to the router while broadcasting its own SSID.
+
+### Files
+
+| File | Role |
+| --- | --- |
+| `~/.config/omarchy/hotspot.conf` | SSID, passphrase, subnet configuration |
+| `~/.local/share/omarchy/bin/omarchy-hotspot` | Control script (`on`, `off`, `status`, `toggle`) |
+| `Navbar.qml` | `hotspotActive`/`hotspotClients` properties, `toggleHotspot()` function, 5s status probe |
+| `Bar.qml` | Hotspot `Module` in the right-side cluster (icon with color = accent when on) |
+
+### Config (`hotspot.conf`)
+
+```ini
+SSID=ddrh-hotspot
+PASS=dylan123
+INTERFACE=wlan0
+SUBNET=192.168.12.0/24
+GATEWAY=192.168.12.1
+```
+
+Passphrase must be 8–63 characters (WPA2 requirement).
+
+### Dependencies
+
+```sh
+sudo pacman -S hostapd dnsmasq
+```
+
+### How it works
+
+1. **Click the hotspot icon** (󰐲) in the bar → calls `toggleHotspot()`
+2. `omarchy-hotspot on` runs via `pkexec` → polkit password dialog appears
+3. Script creates a virtual AP interface (`wlan0_ap`) on the same physical card
+4. Detects your router's channel from the managed interface (`wlan0`) so hostapd skips ACS
+5. Starts `hostapd` (WPA2-PSK) and `dnsmasq` (DHCP + DNS on the AP subnet)
+6. Enables IP forwarding and NAT (`iptables`) so AP clients reach the internet
+7. Writes `active` to `/tmp/hotspot-active`
+8. Bar probe (every 5s) reads the state file and updates the icon/tooltip
+
+Turning it off reverses the process: kills daemons, removes NAT rules, deletes the virtual interface.
+
+### Privilege model
+
+`hostapd`, `dnsmasq`, `iw`, `ip`, `iptables`, and `sysctl` all need root. The script re-executes itself via `pkexec` for `on`/`off`/`toggle` commands. `status` runs as your user and reads `/tmp/hotspot-active`. Notifications are sent as the original user via `sudo -u $USER notify-send`.
+
+### Client connectivity
+
+- **SSID**: `ddrh-hotspot` (or whatever is set in `hotspot.conf`)
+- **Passphrase**: `dylan123`
+- **DHCP range**: 192.168.12.10–192.168.12.100 (24h lease)
+- **DNS**: 1.1.1.1, 8.8.8.8
+
+### Troubleshooting
+
+| Symptom | Likely cause |
+| --- | --- |
+| Click does nothing / no polkit prompt | `hostapd` or `dnsmasq` not installed (`sudo pacman -S hostapd dnsmasq`) |
+| Password prompt appears but hotspot doesn't turn on | Check the script log: `journalctl -f` or run `pkexec omarchy-hotspot on` in a terminal |
+| Hotspot shows as active but clients can't reach internet | NAT/forwarding issue — check `iptables -t nat -L POSTROUTING` and `sysctl net.ipv4.ip_forward` |
+| Hostapd fails with "invalid WPA passphrase length" | Passphrase must be 8–63 chars — update `~/.config/omarchy/hotspot.conf` |
+| "Address already in use" for port 53 | `systemd-resolved` conflict — dnsmasq uses `bind-interfaces` to bind only to the AP interface; if it still fails, stop resolved: `sudo systemctl stop systemd-resolved` |

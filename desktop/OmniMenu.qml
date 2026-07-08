@@ -90,6 +90,7 @@ Item {
     // unwind via the same path as any other category.
     readonly property bool fileMode: root.categoryFilter === Data.fileCategory
     readonly property bool ghMode:   root.categoryFilter === Data.ghCategory
+    readonly property bool webMode:  root.categoryFilter === Data.webCategory
     readonly property bool favMode:  root.categoryFilter === Data.favCategory
     readonly property bool histMode: root.categoryFilter === Data.histCategory
     readonly property bool procMode:  root.categoryFilter === Data.procCategory
@@ -97,7 +98,15 @@ Item {
     // Quick mode swaps the result list for a live-tile grid. Tiles bind
     // to nav telemetry for instantaneous state; clicking one drops an
     // expanded detail panel below the grid with that tile's adjustments.
+    // Web search fires from root too — when the user types in the main
+    // view, omni search + DuckDuckGo results appear alongside the
+    // regular scored app/action list.
+    readonly property bool showingWebResults:
+        root.categoryFilter === "" && root.query.trim().length > 0
+        && !root.tldrMode && !root.llmMode && !root.aiChatMode
     readonly property bool quickMode: root.categoryFilter === "Quick"
+    property bool aiChatMode: false
+    property string aiChatModel: ""
     // Query-shape modes. Each triggers off the query string directly,
     // so the user can pivot in from any drill without going back to
     // root.
@@ -219,6 +228,41 @@ Item {
     readonly property alias previewRepoUrl: ghSearch.previewRepoUrl
     readonly property alias previewReadme:  ghSearch.previewReadme
 
+    // Web search drill — DuckDuckGo-backed, debounced, URL+preview per item.
+    // Active both in dedicated web mode AND whenever the user types from
+    // root view, so web results appear alongside the normal app list.
+    WebSearch {
+        id: webSearch
+        query: root.query
+        active: !root.tldrMode && !root.llmMode
+                && (root.webMode || root.showingWebResults)
+        selectedItem: root.filteredItems[root.selectedIndex] || null
+    }
+    readonly property alias webItems:       webSearch.items
+    readonly property alias webRunning:     webSearch.running
+    readonly property alias webPreviewUrl:  webSearch.previewUrl
+    readonly property alias webPreviewTitle: webSearch.previewTitle
+    readonly property alias webPreviewDomain: webSearch.previewDomain
+    readonly property alias webPreviewSnippet: webSearch.previewSnippet
+
+    // Inline AI chat — triggered by activating an "Ask AI" web search
+    // entry. Maintains a full conversation history across submits until
+    // the menu closes. Uses the model chosen from the web search list.
+    AiChat {
+        id: aiChat
+        model: root.aiChatModel
+        prompt: root.query
+        active: root.aiChatMode
+        palette: ({ ink: root.ink, inkDeep: root.inkDeep, indigo: root.indigo, seal: root.seal, paper: root.paper })
+    }
+    readonly property alias aiChatItems:       aiChat.items
+    readonly property alias aiChatPreview:      aiChat.previewText
+    readonly property alias aiChatSubmitted:    aiChat.submitted
+    readonly property alias aiChatRunning:      aiChat.running
+    readonly property alias aiChatModelProp:    aiChat.model
+    readonly property alias aiChatPrompt:       aiChat.prompt
+    readonly property alias aiChatRaw:          aiChat.previewRaw
+
     readonly property string sectionIcon: {
         if (root.categoryFilter === "") return "";
         for (let i = 0; i < Data.categoryNav.length; i++) {
@@ -290,8 +334,9 @@ Item {
     readonly property alias chatSubmitted: ollamaChat.submitted
     readonly property alias chatModel:     ollamaChat.model_
 
-    readonly property bool previewActive: root.tldrMode || root.llmMode || root.fileMode || root.ghMode || root.procMode || root.themeMode
+    readonly property bool previewActive: root.aiChatMode || root.tldrMode || root.llmMode || root.fileMode || root.ghMode || root.webMode || root.showingWebResults || root.procMode || root.themeMode
     readonly property bool previewHasContent: {
+        if (root.aiChatMode) return root.aiChatSubmitted && root.aiChatPreview !== "";
         if (root.tldrMode) return root.tldrPreview !== "";
         if (root.llmMode) {
             // Probing: no content yet. Status != "ok": show the
@@ -305,6 +350,7 @@ Item {
         }
         if (root.fileMode || root.ghMode)
             return root.previewPath !== "" || root.previewRepoUrl !== "";
+        if (root.webMode || root.showingWebResults) return root.webPreviewUrl !== "";
         if (root.procMode) return processes.previewPid !== "";
         if (root.themeMode) {
             const it = root.filteredItems[root.selectedIndex];
@@ -328,11 +374,20 @@ Item {
         // session starts fresh. The ollama daemon itself is left
         // running — we don't manage its lifecycle, only our use of it.
         ollamaChat.clear();
+        aiChat.clear();
     }
     function toggle() { if (root.visible_) close(); else open(); }
     function goUp() {
         // Step back one level. At root this is a no-op so the caller can
         // chain "goUp or close" without a branch.
+        if (root.aiChatMode) {
+            root.aiChatMode = false;
+            root.aiChatModel = "";
+            aiChat.clear();
+            root.query = "";
+            root.selectedIndex = 0;
+            return true;
+        }
         if (root.categoryFilter !== "") {
             root.categoryFilter = "";
             root.query = "";
@@ -347,11 +402,18 @@ Item {
     onCategoryFilterChanged: {
         fileSearch.clear();
         ghSearch.clear();
+        webSearch.clear();
         tldrSearch.clear();
         ollamaChat.clear();
+        aiChat.clear();
         // Processes/Themes own their own clear()-on-deactivate via their
         // `active` binding, so the shell doesn't have to nudge them when
         // the filter changes — they react automatically.
+        // Restart web search when entering root or web mode with a query.
+        if (root.query.trim().length > 0
+            && (root.webMode || root.showingWebResults)) {
+            webSearch.restart();
+        }
     }
 
     // ---------- Icon resolution ----------
@@ -387,6 +449,18 @@ Item {
     //                      ||, &&, redirects) work alongside plain
     //                      argv-style commands without a special case
     Process { id: runner; running: false }
+    function searchOmni() {
+        const q = root.query.trim();
+        if (q.length === 0) return;
+        const url = "http://dylans-mac-mini:8087/search?q=" + encodeURIComponent(q);
+        runner.command = ["sh", "-c",
+            "setsid -f uwsm-app -- bash -c "
+            + JSON.stringify(Data.openUrl(url))
+            + " >/dev/null 2>&1"];
+        runner.running = false;
+        runner.running = true;
+        root.close();
+    }
     function activate(item) {
         if (!item) return;
         if (item.isCategory) {
@@ -491,6 +565,18 @@ Item {
             root.close();
             return;
         }
+        if (item.isAiChat) {
+            const msg = root.query.trim();
+            if (!root.aiChatMode) {
+                root.aiChatModel = item.modelName;
+                root.aiChatMode = true;
+            }
+            if (msg.length > 0) {
+                aiChat.submit(msg);
+                root.query = "";
+            }
+            return;
+        }
         bookmarks.record(item);
         // TUI commands need a real terminal — fzf, sudo prompts, and bash
         // `read` fail when launched detached. `item.tui` holds the wrapper
@@ -569,6 +655,8 @@ Item {
         : root.nav.filter(it => it.target !== Data.ghCategory)
 
     readonly property var filteredItems: {
+        // aiChat mode — one synthetic row, like llmMode.
+        if (root.aiChatMode) return root.aiChatItems;
         // tldr mode owns the query entirely — its synthetic row is the
         // only thing the list should show, scoring doesn't apply.
         if (root.tldrMode) return root.tldrItems;
@@ -579,6 +667,7 @@ Item {
         // did the filtering, so we just pass their results through.
         if (root.fileMode) return root.fileItems;
         if (root.ghMode)   return root.ghItems;
+        if (root.webMode)  return root.webItems;
 
         const tokens = root.queryTokens;
         const filter = root.categoryFilter;
@@ -661,6 +750,16 @@ Item {
         const lim = Math.min(scored.length, cap);
         const out = new Array(lim);
         for (let j = 0; j < lim; j++) out[j] = scored[j].item;
+
+        // In root mode with a query, append web results (omni search
+        // entry + DuckDuckGo inline results + Google backup) below.
+        if (root.showingWebResults) {
+            const webPool = root.webItems;
+            for (let i = 0; i < webPool.length && out.length < cap; i++) {
+                out.push(webPool[i]);
+            }
+        }
+
         return out;
     }
 
@@ -839,6 +938,12 @@ Item {
                     // exits with a half-typed query on screen.
                     if (root.quickExpanded) {
                         root.expandedTile = null;
+                    } else if (root.aiChatMode) {
+                        root.aiChatMode = false;
+                        root.aiChatModel = "";
+                        aiChat.clear();
+                        root.query = "";
+                        root.selectedIndex = 0;
                     } else if (root.query.length > 0) {
                         root.query = "";
                         root.selectedIndex = 0;
@@ -867,12 +972,12 @@ Item {
                                || (e2.key === Qt.Key_Tab && (e2.modifiers & Qt.ShiftModifier)))) {
                     root.moveQuickSelection(-1);
                     event.accepted = true;
-                } else if (root.llmMode && root.previewHasContent
+                } else if ((root.llmMode || root.aiChatMode) && root.previewHasContent
                            && (e2.key === Qt.Key_Up || e2.key === Qt.Key_Down
                                || e2.key === Qt.Key_PageUp || e2.key === Qt.Key_PageDown
                                || e2.key === Qt.Key_Home || e2.key === Qt.Key_End
                                || e2.key === Qt.Key_Tab || e2.key === Qt.Key_Backtab)) {
-                    // chat / command mode: same scroll routing as
+                    // chat / command / aiChat mode: same scroll routing as
                     // tldr mode below.
                     // List nav is a no-op here (single synthetic row).
                     const f = previewPaneInstance.chatFlickable;
@@ -962,6 +1067,9 @@ Item {
                     const it = root.filteredItems[root.selectedIndex];
                     if (it && !it.isCategory && !it.isTldr && !it.isOllama) bookmarks.toggleFavourite(it);
                     event.accepted = true;
+                } else if (e2.key === Qt.Key_G && (e2.modifiers & Qt.ControlModifier)) {
+                    root.searchOmni();
+                    event.accepted = true;
                 } else if ((e2.modifiers & Qt.ControlModifier)
                            && (e2.key === Qt.Key_Plus || e2.key === Qt.Key_Equal
                                || e2.key === Qt.Key_Minus)) {
@@ -974,7 +1082,7 @@ Item {
                     else /* Key_Equal without Shift */ root.fontScale = 1.0;
                     event.accepted = true;
                 } else if (e2.key === Qt.Key_C && (e2.modifiers & Qt.ControlModifier)
-                           && root.llmMode && root.chatPreview !== "") {
+                           && (root.llmMode || root.aiChatMode) && (root.chatPreview !== "" || root.aiChatPreview !== "")) {
                     // Ctrl+C: if the user dragged a selection in the
                     // rendered RichText edit, copy that (lossy — Qt
                     // strips inline `code` backticks during conversion,
@@ -1102,6 +1210,7 @@ Item {
                         anchors.right: parent.right
                         omni: root
                         ollamaChat: ollamaChat
+                        aiChat: aiChat
                     }
                 }
 

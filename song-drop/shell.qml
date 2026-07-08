@@ -130,7 +130,7 @@ ShellRoot {
                 id: preRoll
                 width: 240
                 height: root.barHeight
-                radius: root.barHeight / 2
+                radius: 0
                 x: stage.centerX - width / 2
                 y: 0
                 color: root.ink
@@ -150,7 +150,7 @@ ShellRoot {
 
                 width: size / Math.sqrt(stretch)
                 height: size * stretch
-                radius: Math.min(width, height) / 2
+                radius: 0
                 x: cx - width / 2
                 y: cy - height / 2
                 color: root.accent
@@ -222,7 +222,7 @@ ShellRoot {
                 height: stage.boxHeight
                 x: stage.centerX - width / 2
                 y: stage.boxY
-                radius: 10
+                radius: 0
                 color: root.accent
                 opacity: 0
                 scale: 0
@@ -232,7 +232,7 @@ ShellRoot {
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: 1
-                    radius: parent.radius - 1
+                    radius: 0
                     color: "transparent"
                     border.width: 1
                     border.color: Qt.rgba(root.textOnAccent.r, root.textOnAccent.g, root.textOnAccent.b, 0.18)

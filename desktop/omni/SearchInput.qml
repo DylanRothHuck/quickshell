@@ -17,6 +17,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         text: input.omni.fileMode ? "󰉖"
               : input.omni.ghMode ? "󰊤"
+              : input.omni.webMode ? "󰖟"
               : input.omni.procMode ? "󰍛"
               : input.omni.themeMode ? "󰸌"
               : "󰍉"
@@ -35,6 +36,7 @@ Item {
             if (o.query.length > 0) return o.query;
             if (o.fileMode)  return "Type to search files in ~ …";
             if (o.ghMode)    return "Your PRs · type to search GitHub repos";
+            if (o.webMode)   return "Type to search the web  ·  Ctrl+G opens query in omni";
             if (o.procMode)  return "Type to filter processes by name, user, pid…";
             if (o.themeMode) return "Type to filter themes…";
             return "Type to search apps, themes, settings…";

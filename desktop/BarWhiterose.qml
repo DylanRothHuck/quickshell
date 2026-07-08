@@ -20,6 +20,9 @@ PanelWindow {
     readonly property color surface: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
     readonly property color musicAccent: root.green
 
+    readonly property bool batPlugged:
+        wr.root.batState === "Charging" || wr.root.batState === "Full" || wr.root.batState === "Not charging"
+
     readonly property string logoSource:
         "file://" + Quickshell.env("HOME") + "/Code/whiterose/site/assets/logo.svg"
     readonly property string icoCpu: String.fromCodePoint(0xf035b)
@@ -43,6 +46,10 @@ PanelWindow {
         wr.root.calendarAnchorItem = wr.root.isHorizontal ? clockItem : clockItemV;
         wr.root.weatherAnchorItem  = wr.root.isHorizontal ? weatherMod : weatherModV;
         wr.root.systemAnchorItem   = wr.root.isHorizontal ? systemMod : systemModV;
+        wr.root.powerProfileAnchorItem = wr.root.isHorizontal ? batteryCell : batteryCellV;
+        wr.root.wifiAnchorItem        = wr.root.isHorizontal ? wifiCell : wifiCellV;
+        wr.root.btAnchorItem          = wr.root.isHorizontal ? btCell : null;
+        wr.root.audioAnchorItem       = wr.root.isHorizontal ? audioCell : null;
     }
 
     color: "transparent"
@@ -52,9 +59,12 @@ PanelWindow {
         left:   wr.root.barEdge !== "right"
         right:  wr.root.barEdge !== "left"
     }
-    implicitHeight: wr.root.isHorizontal ? wr.root.barHeight : 0
+    implicitHeight: wr.root.isHorizontal
+        ? (wr.root.barAutoHide && !wr.root.barReveal ? 1 : wr.root.barHeight)
+        : 0
     implicitWidth:  wr.root.isHorizontal ? 0 : wr.root.barHeight
-    exclusiveZone:  wr.root.barHeight
+    exclusiveZone:  wr.root.barAutoHide && !wr.root.barReveal
+                    ? 0 : wr.root.barHeight
 
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "omarchy-menu"
@@ -64,6 +74,27 @@ PanelWindow {
         target: wr.root
         function onBarEdgeChanged() { if (wr.visible) wr.claimAnchors(); }
     }
+
+    // Content wrapper — PanelWindow doesn't support transform, so clip
+    // ensures children don't spill when the window is 1px auto-hide tall.
+    Item {
+        id: barContent
+        anchors.fill: parent
+        clip: true
+
+        // HoverHandler coexists with child MouseAreas — receives hover
+        // without blocking children, so the bar stays visible while the
+        // cursor is over it (prevents hide timer from firing).
+        HoverHandler {
+            onHoveredChanged: {
+                if (hovered) {
+                    wr.root.barReveal = true;
+                    wr.root._barTimerStop();
+                } else {
+                    wr.root._barTimerRestart();
+                }
+            }
+        }
 
     Rectangle {
         id: backplate
@@ -252,11 +283,28 @@ PanelWindow {
             Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 14; Layout.alignment: Qt.AlignVCenter; color: wr.line }
 
             WhiteRoseCell {
+                root: wr.root
+                text: wr.root.kbdLayout
+                tooltip: "Click to switch layout"
+                borderless: true
+                minWidth: 20
+                maxWidth: 24
+                fontFamily: wr.root.mono
+                fontSize: 9
+                iconSize: 0
+                onActivated: wr.root.cycleKbdLayout()
+            }
+
+            WhiteRoseCell {
                 id: systemMod
                 root: wr.root
                 glyph: wr.icoCpu
                 tooltip: "System - CPU " + Math.round(wr.root.cpuVal) + "% / MEM " + Math.round(wr.root.memVal) + "%"
-                strong: wr.root.cpuVal > 80 || wr.root.memVal > 85
+                strong: wr.root.powerProfile === "" && (wr.root.cpuVal > 80 || wr.root.memVal > 85)
+                ink: wr.root.powerProfile === "power-saver" ? wr.root.green
+                     : wr.root.powerProfile === "performance" ? wr.root.accent
+                     : wr.root.ink
+                accentColor: wr.root.seal
                 borderless: true
                 minWidth: 28
                 maxWidth: 28
@@ -267,21 +315,18 @@ PanelWindow {
                 onRightActivated: wr.root.run("omarchy-launch-or-focus-tui btop")
             }
             WhiteRoseCell {
+                id: btCell
                 root: wr.root
                 glyph: wr.root.btIcon
-                tooltip: {
-                    if (!wr.root.btPowered) return "Bluetooth off";
-                    return wr.root.btCount > 0
-                        ? "Bluetooth - " + wr.root.btCount + " connected"
-                        : "Bluetooth on";
-                }
-                ink: wr.root.btPowered ? wr.text : wr.muted
+                tooltip: wr.root.btTooltip
+                ink: wr.root.btPowered ? wr.root.accent : wr.muted
                 borderless: true
                 minWidth: 28
                 maxWidth: 28
-                onActivated: wr.root.run("omarchy-launch-bluetooth")
+                onActivated: wr.root.openBluetooth()
             }
             WhiteRoseCell {
+                id: wifiCell
                 root: wr.root
                 glyph: wr.root.netIcon
                 tooltip: {
@@ -292,24 +337,34 @@ PanelWindow {
                     }
                     return "Offline";
                 }
-                ink: wr.root.netKind === "none" ? wr.muted : wr.text
+                ink: wr.root.netKind === "wifi" ? wr.root.accent : (wr.root.netKind === "none" ? wr.muted : wr.text)
                 borderless: true
                 minWidth: 28
                 maxWidth: 28
-                onActivated: wr.root.run("omarchy-launch-wifi")
+                onActivated: wr.root.openWifi()
             }
             WhiteRoseCell {
+                id: audioCell
                 root: wr.root
                 glyph: wr.root.audioIcon
                 tooltip: wr.root.audioMuted
                          ? "Audio muted - " + wr.root.audioVol + "%"
                          : "Audio " + wr.root.audioVol + "%"
                 strong: wr.root.audioMuted
+                ink: wr.root.audioVol >= 100 ? wr.root.accent : wr.root.ink
                 borderless: true
                 minWidth: 28
                 maxWidth: 28
-                onActivated: wr.root.run("omarchy-launch-audio")
+                onActivated: wr.root.openAudio()
                 onRightActivated: wr.root.run("pamixer -t")
+                onWheelActivated: (delta, mx, my) => {
+                    wr.root.setVolume(wr.root.audioVol + (delta > 0 ? 5 : -5));
+                    const tip = wr.root.audioMuted
+                        ? "Audio muted · " + wr.root.audioVol + "%"
+                        : "Audio " + wr.root.audioVol + "%";
+                    const p = mapToItem(null, mx, my);
+                    wr.root.showTooltip(tip, p.x, p.y);
+                }
             }
             WhiteRoseCell {
                 root: wr.root
@@ -325,23 +380,40 @@ PanelWindow {
                 onActivated: wr.root.openOmarchyUpdate()
             }
             WhiteRoseCell {
+                id: batteryCell
                 root: wr.root
                 glyph: wr.root.batteryIcon()
                 tooltip: wr.batteryTip()
-                strong: wr.root.batVal <= 10
+                strong: !wr.batPlugged && wr.root.batVal <= 10
+                ink: wr.batPlugged ? wr.root.accent : wr.root.ink
+                accentColor: wr.batPlugged ? wr.root.accent : wr.root.seal
                 borderless: true
                 minWidth: 28
                 maxWidth: 28
-                onActivated: wr.root.run("omarchy-menu power")
+                onActivated: wr.root.openPowerProfile()
             }
+            // Auto-hide toggle: pin icon, seal when auto-hide is active.
             WhiteRoseCell {
                 root: wr.root
-                text: wr.root.edgeArrow()
-                tooltip: "Move bar"
+                glyph: "󰐃"
+                tooltip: wr.root.barAutoHide
+                         ? "Auto-hide on · Click to pin bar"
+                         : "Auto-hide off · Click to hide bar when idle"
                 borderless: true
                 minWidth: 28
-                onActivated: wr.root.cycleBarEdge()
+                maxWidth: 28
+                ink: wr.root.barAutoHide ? wr.root.seal : wr.text
+                onActivated: wr.root.toggleBarAutoHide()
             }
+
+            // WhiteRoseCell {
+            //     root: wr.root
+            //     text: wr.root.edgeArrow()
+            //     tooltip: "Move bar"
+            //     borderless: true
+            //     minWidth: 28
+            //     onActivated: wr.root.cycleBarEdge()
+            // }
         }
     }
 
@@ -449,11 +521,26 @@ PanelWindow {
         Rectangle { Layout.preferredWidth: 14; Layout.preferredHeight: 1; Layout.alignment: Qt.AlignHCenter; color: wr.line }
 
         WhiteRoseCell {
+            root: wr.root
+            text: wr.root.kbdLayout
+            tooltip: "Click to switch layout"
+            borderless: true
+            minWidth: 20
+            fontSize: 9
+            iconSize: 0
+            onActivated: wr.root.cycleKbdLayout()
+        }
+
+        WhiteRoseCell {
             id: systemModV
             root: wr.root
             glyph: wr.icoCpu
             tooltip: "System - CPU " + Math.round(wr.root.cpuVal) + "% / MEM " + Math.round(wr.root.memVal) + "%"
-            strong: wr.root.cpuVal > 80 || wr.root.memVal > 85
+            strong: wr.root.powerProfile === "" && (wr.root.cpuVal > 80 || wr.root.memVal > 85)
+            ink: wr.root.powerProfile === "power-saver" ? wr.root.green
+                 : wr.root.powerProfile === "performance" ? wr.root.accent
+                 : wr.root.ink
+            accentColor: wr.root.seal
             borderless: true
             minWidth: 20
             fontSize: 9
@@ -464,6 +551,7 @@ PanelWindow {
             onRightActivated: wr.root.run("omarchy-launch-or-focus-tui btop")
         }
         WhiteRoseCell {
+            id: wifiCellV
             root: wr.root
             glyph: wr.root.netIcon
             tooltip: {
@@ -475,19 +563,19 @@ PanelWindow {
             borderless: true
             minWidth: 20
             fontSize: 9
-            onActivated: wr.root.run("omarchy-launch-wifi")
+            onActivated: wr.root.openWifi()
         }
-        WhiteRoseCell {
-            root: wr.root
-            glyph: wr.root.audioIcon
-            tooltip: wr.root.audioMuted
-                     ? "Audio muted - " + wr.root.audioVol + "%"
-                     : "Audio " + wr.root.audioVol + "%"
-            strong: wr.root.audioMuted
-            borderless: true
-            minWidth: 20
-            fontSize: 9
-            onActivated: wr.root.run("omarchy-launch-audio")
+            WhiteRoseCell {
+                root: wr.root
+                glyph: wr.root.audioIcon
+                tooltip: wr.root.audioMuted
+                         ? "Audio muted - " + wr.root.audioVol + "%"
+                         : "Audio " + wr.root.audioVol + "%"
+                strong: wr.root.audioMuted
+                borderless: true
+                minWidth: 20
+                fontSize: 9
+                onActivated: wr.root.openAudio()
             onRightActivated: wr.root.run("pamixer -t")
         }
         WhiteRoseCell {
@@ -511,26 +599,30 @@ PanelWindow {
             onRightActivated: wr.root.refreshWeather()
         }
         WhiteRoseCell {
+            id: batteryCellV
             root: wr.root
             glyph: wr.root.batteryIcon()
             tooltip: wr.batteryTip()
-            strong: wr.root.batVal <= 10
+            strong: !wr.batPlugged && wr.root.batVal <= 10
+            ink: wr.batPlugged ? wr.root.accent : wr.root.ink
+            accentColor: wr.batPlugged ? wr.root.accent : wr.root.seal
             borderless: true
             minWidth: 20
             fontSize: 9
-            onActivated: wr.root.run("omarchy-menu power")
+            onActivated: wr.root.openPowerProfile()
         }
 
         Rectangle { Layout.preferredWidth: 14; Layout.preferredHeight: 1; Layout.alignment: Qt.AlignHCenter; color: wr.line }
 
-        WhiteRoseCell {
-            root: wr.root
-            text: wr.root.edgeArrow()
-            tooltip: "Move bar"
-            borderless: true
-            minWidth: 20
-            fontSize: 11
-            onActivated: wr.root.cycleBarEdge()
-        }
+        // WhiteRoseCell {
+        //     root: wr.root
+        //     text: wr.root.edgeArrow()
+        //     tooltip: "Move bar"
+        //     borderless: true
+        //     minWidth: 20
+        //     fontSize: 11
+        //     onActivated: wr.root.cycleBarEdge()
+        // }
+    }
     }
 }

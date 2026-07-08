@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
 import Quickshell.Services.Mpris
+import Quickshell.Hyprland
 
 // Omarchy top bar. Owns the per-bar state, probes, and IPC; per-feature
 // surfaces (Bar, *Popup, TooltipOverlay) and widgets (Module, Workspace,
@@ -38,7 +39,7 @@ Item {
     signal paletteToggleRequested()
 
     // Kanji numerals 〇 一 二 ... 十.
-    readonly property var kanjiNum: ["〇","一","二","三","四","五","六","七","八","九","十"]
+    readonly property var kanjiNum: ["0","1","2","3","4","5","6","7","8","9","10"]
     function indexKanji(n) { return n >= 0 && n <= 10 ? kanjiNum[n] : String(n); }
 
     // BMP Private Use Area icons; written via fromCodePoint so the source
@@ -58,6 +59,7 @@ Item {
     readonly property string icoSearch:  String.fromCodePoint(0xf0349)
     readonly property string icoUpdate:  String.fromCodePoint(0xf021)
     readonly property string icoPlug:    String.fromCodePoint(0xf06a5)
+    readonly property string icoHotspot: String.fromCodePoint(0xf0432)
     readonly property string icoMusic:   String.fromCodePoint(0xf001)
     readonly property string icoPause:   String.fromCodePoint(0xf04c)
 
@@ -124,6 +126,84 @@ Item {
         onExited: function(code) { if (code !== 0) root.barVariant = "zen"; }
     }
 
+    // ---------- Auto-hide ----------
+    // When enabled, the bar slides up off-screen and only reveals when the
+    // cursor approaches the top edge of the screen. A thin full-width strip
+    // just below the top screen edge detects the hover. Persisted to a state
+    // file so the choice survives a relogin.
+    property bool barAutoHide: false
+    property bool barReveal: true
+    readonly property string barAutoHideStatePath:
+        Quickshell.env("HOME") + "/.local/state/quickshell-desktop/bar-autohide"
+
+    function setBarAutoHide(on) {
+        const want = !!on;
+        root.barAutoHide = want;
+        if (want) {
+            root.barReveal = true;
+        } else {
+            root.barReveal = true;
+            barHideTimer.stop();
+        }
+        barAutoHideWriter.command = ["bash", "-lc",
+            "mkdir -p " + JSON.stringify(root.barAutoHideStatePath.replace(/\/[^/]+$/, ""))
+            + " && printf '%s' " + JSON.stringify(want ? "1" : "0")
+            + " > " + JSON.stringify(root.barAutoHideStatePath)];
+        barAutoHideWriter.running = false;
+        barAutoHideWriter.running = true;
+    }
+    function toggleBarAutoHide() { root.setBarAutoHide(!root.barAutoHide); }
+
+    Process { id: barAutoHideWriter; running: false }
+    Process {
+        id: barAutoHideReader
+        running: true
+        command: ["cat", root.barAutoHideStatePath]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.setBarAutoHide(this.text.trim() === "1");
+            }
+        }
+        onExited: function(code) { if (code !== 0) root.setBarAutoHide(false); }
+    }
+
+    // Edge-of-screen hover strip that reveals the bar when auto-hide is on.
+    // Always mapped so it can receive pointer events even while the bar
+    // itself is translated off-screen.
+    PanelWindow {
+        id: barRevealStrip
+        anchors { top: true; left: true; right: true }
+        height: 4
+        color: "transparent"
+        visible: root.barAutoHide
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.namespace: "omarchy-bar-reveal"
+        exclusiveZone: 0
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.ArrowCursor
+            onEntered: {
+                root.barReveal = true;
+                barHideTimer.stop();
+            }
+            onExited: {
+                barHideTimer.restart();
+            }
+        }
+    }
+
+    Timer {
+        id: barHideTimer
+        interval: 1500
+        onTriggered: {
+            if (root.barAutoHide) root.barReveal = false;
+        }
+    }
+    function _barTimerStop() { barHideTimer.stop(); }
+    function _barTimerRestart() { barHideTimer.restart(); }
+
     // ---------- Tooltips ----------
     // A single overlay panel reads these and renders the label near the
     // hovered icon. Positions are bar-window-local; the overlay translates
@@ -157,10 +237,14 @@ Item {
     // Bar registers its trigger Items here so openCalendar/Weather/Display
     // can re-anchor on every open — including IPC opens from OmniMenu that
     // don't go through a click handler.
-    property Item calendarAnchorItem: null
-    property Item weatherAnchorItem:  null
-    property Item displayAnchorItem:  null
-    property Item systemAnchorItem:   null
+    property Item calendarAnchorItem:    null
+    property Item weatherAnchorItem:     null
+    property Item displayAnchorItem:     null
+    property Item systemAnchorItem:      null
+    property Item powerProfileAnchorItem: null
+    property Item wifiAnchorItem:          null
+    property Item btAnchorItem:            null
+    property Item audioAnchorItem:         null
 
     function anchorPopupTo(item) {
         const p = item.mapToItem(null, item.width / 2, item.height / 2);
@@ -169,7 +253,8 @@ Item {
     }
 
     // ---------- State ----------
-    property int activeWs: 1
+    // Event-driven workspace tracking via Quickshell.Hyprland (instant).
+    readonly property int activeWs: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
     property var existingWs: [1, 2, 3, 4, 5]
     // +1 = user navigated to a higher-numbered workspace (rightward along
     // the bar), -1 = lower-numbered (leftward), 0 = no recent travel. The
@@ -187,6 +272,13 @@ Item {
     property string netKind: "none"   // "eth" | "wifi" | "none"
     property string wifiSsid: ""
     property int    wifiSignal: 0
+
+    property bool   hotspotActive: false
+    property int    hotspotClients: 0
+
+    property bool   shareVisible: false
+    property string shareSsid: ""
+    property string sharePassword: ""
 
     // Wi-Fi scan state for the Quick panel. `wifiNetworks` is a list of
     // {ssid, signal, security, inUse} sorted desc by signal. Driven by
@@ -233,6 +325,18 @@ Item {
                  + " [ -n \"$DEV\" ] && iwctl --dont-ask device \"$DEV\" set-property Powered " + target);
         wifiPostConnectTimer.restart();
     }
+    function toggleHotspot() {
+        root.run("omarchy-hotspot " + (root.hotspotActive ? "off" : "on"));
+        hotspotProbe.running = false;
+        hotspotProbe.running = true;
+    }
+    function shareWifi(ssid) {
+        if (!ssid || ssid.length === 0) return;
+        root.shareSsid = ssid;
+        root.sharePassword = "";
+        shareProbe.running = false;
+        shareProbe.running = true;
+    }
     Timer {
         id: wifiPostConnectTimer
         interval: 800
@@ -248,35 +352,43 @@ Item {
     property bool   btScanning: false
     property string _btDevicesSer: ""
 
+    readonly property string btTooltip: {
+        if (!root.btPowered) return "Bluetooth off";
+        const conn = root.btDevices.filter(d => d.connected);
+        if (conn.length === 0) return "Bluetooth on";
+        const parts = conn.map(d => {
+            return d.battery != null
+                ? d.name + " " + d.battery + "%"
+                : d.name;
+        });
+        return "Bluetooth · " + parts.join(" · ");
+    }
+
     function refreshBluetooth() {
         if (btDevicesProbe.running) return;
         btDevicesProbe.running = false;
         btDevicesProbe.running = true;
     }
-    // bluez-tools path (omarchy ships bt-adapter / bt-device, not the
-    // bluetoothctl utility). Same semantics as before, different CLI.
     function btConnect(mac) {
         if (!mac) return;
-        root.run("bt-device --connect " + mac);
+        root.run("bluetoothctl connect " + mac + " >/dev/null 2>&1");
         btPostActionTimer.restart();
     }
     function btDisconnect(mac) {
         if (!mac) return;
-        root.run("bt-device --disconnect " + mac);
+        root.run("bluetoothctl disconnect " + mac + " >/dev/null 2>&1");
         btPostActionTimer.restart();
     }
     function btTogglePower() {
+        const target = root.btPowered ? "off" : "on";
         root.btPowered = !root.btPowered;
-        root.run("bt-adapter -s Powered " + (root.btPowered ? 1 : 0));
+        root.run("bluetoothctl power " + target + " >/dev/null 2>&1");
         btPostActionTimer.restart();
     }
     function btToggleScan() {
         root.btScanning = !root.btScanning;
-        // `bt-adapter -d --timeout N` blocks for N seconds while
-        // discovering, so fork it off and let the refresh probe pick up
-        // any new devices it surfaces.
         if (root.btScanning) {
-            root.run("setsid -f bt-adapter -d --timeout 15 >/dev/null 2>&1");
+            root.run("timeout 15 bluetoothctl scan on >/dev/null 2>&1");
             btScanStopTimer.restart();
         }
         btPostActionTimer.restart();
@@ -294,15 +406,66 @@ Item {
         repeat: false
         onTriggered: root.btScanning = false
     }
+    // Periodic refresh of the device list so the bar tooltip stays current
+    // without requiring the Quick panel to be opened.
+    Timer {
+        id: btDevicesTimer
+        interval: 30000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.refreshBluetooth()
+    }
     property string audioIcon: ""
     property int    audioVol: 0
     property bool   audioMuted: false
+
+    // ---------- OSD (volume/brightness pop-in at the clock slot) ----------
+    property bool  osdActive: false
+    property int   osdPct: 0
+    Timer { id: osdTimer; interval: 1400; onTriggered: root.osdActive = false }
+
+    property string kbdLayout: "us"
+
     // List of PipeWire/Pulse output sinks with the current default flagged.
     // Each entry: { id, name, description, isDefault }. Populated by the
     // audioSinks probe on demand (refreshed when the Audio quick panel opens).
     property var    audioSinks: []
     property string audioDefaultSink: ""
     property string _audioSinksSer: ""
+
+    property var    audioSources: []
+    property string audioDefaultSource: ""
+    property string _audioSourcesSer: ""
+
+    function setDefaultSource(id) {
+        if (!id) return;
+        root.audioDefaultSource = id;
+        root.run("wpctl set-default " + id);
+        audioSourcesProbe.running = false;
+        audioSourcesProbe.running = true;
+    }
+    function refreshAudioSources() {
+        audioSourcesProbe.running = false;
+        audioSourcesProbe.running = true;
+    }
+
+    property var playbackStreams: []
+    property string _playbackStreamsSer: ""
+
+    function setStreamVolume(id, vol) {
+        root.run("pactl set-sink-input-volume " + id + " " + vol + "%");
+    }
+    function toggleStreamMute(id) {
+        root.run("pactl set-sink-input-mute " + id + " toggle");
+        // refresh so the icon/label update on next probe cycle
+        playbackStreamsProbe.running = false;
+        playbackStreamsProbe.running = true;
+    }
+    function refreshPlaybackStreams() {
+        playbackStreamsProbe.running = false;
+        playbackStreamsProbe.running = true;
+    }
 
     function setDefaultSink(id) {
         if (!id) return;
@@ -763,6 +926,56 @@ Item {
         root.systemVisible = true;
     }
 
+    // ---------- Power profile popup state ----------
+    property bool powerProfileVisible: false
+    function openPowerProfile() {
+        if (root.powerProfileAnchorItem) root.anchorPopupTo(root.powerProfileAnchorItem);
+        root.refreshPowerProfile();
+        root.powerProfileVisible = true;
+    }
+
+    // ---------- Power-actions popup state (keyboard-triggered, no anchor) ----------
+    property bool powerVisible: false
+    function openPower() {
+        root.powerVisible = true;
+    }
+
+    // ---------- Theme selector popup state (keyboard-triggered, no anchor) ----------
+    property bool themeVisible: false
+    function openTheme() {
+        root.themeVisible = true;
+    }
+
+    // ---------- Wallpaper selector popup state (keyboard-triggered, no anchor) ----------
+    property bool wallpaperVisible: false
+    function openWallpaper() {
+        root.wallpaperVisible = true;
+    }
+
+    // ---------- Wi-Fi popup state ----------
+    property bool wifiVisible: false
+    function openWifi() {
+        if (root.wifiAnchorItem) root.anchorPopupTo(root.wifiAnchorItem);
+        root.refreshWifi();
+        root.wifiVisible = true;
+    }
+
+    // ---------- Bluetooth popup state ----------
+    property bool btVisible: false
+    function openBluetooth() {
+        if (root.btAnchorItem) root.anchorPopupTo(root.btAnchorItem);
+        root.refreshBluetooth();
+        root.btVisible = true;
+    }
+
+    // ---------- Audio popup state ----------
+    property bool audioVisible: false
+    function openAudio() {
+        if (root.audioAnchorItem) root.anchorPopupTo(root.audioAnchorItem);
+        root.refreshAudioSources();
+        root.audioVisible = true;
+    }
+
     function refreshSystemStats() {
         if (systemProbe.running) return;
         systemProbe.running = false;
@@ -785,16 +998,30 @@ Item {
         pct = Math.max(1, Math.min(100, Math.round(pct)));
         root.brightnessPct = pct;
         root.run("brightnessctl set " + pct + "%");
+        root.osdPct = pct;
+        root.osdActive = true;
+        osdTimer.restart();
+    }
+    function updateAudioIcon() {
+        if (root.audioMuted)          root.audioIcon = root.icoMute;
+        else if (root.audioVol < 34)  root.audioIcon = root.icoVol1;
+        else if (root.audioVol < 67)  root.audioIcon = root.icoVol2;
+        else                          root.audioIcon = root.icoVol3;
     }
     function setVolume(pct) {
         pct = Math.max(0, Math.min(150, Math.round(pct)));
         root.audioVol = pct;
+        root.updateAudioIcon();
         // --allow-boost lets values above 100 land; pamixer caps at 150
         // anyway, matching the visible range on most distros.
         root.run("pamixer --allow-boost --set-volume " + pct);
+        root.osdPct = pct;
+        root.osdActive = true;
+        osdTimer.restart();
     }
     function toggleMute() {
         root.audioMuted = !root.audioMuted;
+        root.updateAudioIcon();
         root.run("pamixer -t");
     }
     function setGamma(pct) {
@@ -1069,6 +1296,13 @@ Item {
         runner.running = true;
     }
 
+    // ---------- Keyboard layout switch ----------
+    function cycleKbdLayout() {
+        root.run("bash -lc 'kbd=$(hyprctl devices -j | jq -r \".keyboards[] | select(.main == true) | .name\"); hyprctl switchxkblayout \"$kbd\" next'");
+        kbdRefreshTimer.restart();
+    }
+    Timer { id: kbdRefreshTimer; interval: 300; onTriggered: { kbdProbe.running = false; kbdProbe.running = true; } }
+
     // ---------- System stats (on demand) ----------
     Process {
         id: systemProbe
@@ -1091,6 +1325,9 @@ Item {
             }
         }
     }
+
+    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: { systemProbe.running = false; systemProbe.running = true; } }
 
     // ---------- Telemetry (1 Hz) ----------
     Process {
@@ -1127,33 +1364,35 @@ Item {
     Timer { interval: 1000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: { tel.running = false; tel.running = true; } }
 
-    // ---------- Workspaces (2 Hz) ----------
-    Process {
-        id: wsProbe
-        running: false
-        command: ["bash", "-lc",
-            "act=$(hyprctl activeworkspace -j 2>/dev/null | sed -n 's/.*\"id\": *\\([0-9]*\\).*/\\1/p' | head -1); "
-            + "ids=$(hyprctl workspaces -j 2>/dev/null | tr ',' '\\n' | sed -n 's/.*\"id\": *\\([0-9]*\\).*/\\1/p' | sort -nu | paste -sd,); "
-            + "printf '%s|%s' \"${act:-1}\" \"${ids:-1}\""]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const p = this.text.split("|");
-                if (p.length === 2) {
-                    const next = parseInt(p[0]) || 1;
-                    // Set direction first; the Workspace delegates read it
-                    // inside their onActiveChanged handlers, which fire as
-                    // soon as we write activeWs below.
-                    if (next > root.activeWs) root.lastDirection = 1;
-                    else if (next < root.activeWs) root.lastDirection = -1;
-                    root.activeWs = next;
-                    const have = p[1].split(",").map(s => parseInt(s)).filter(n => !isNaN(n));
-                    root.existingWs = [...new Set([...have, 1, 2, 3, 4, 5])].sort((a,b) => a-b).slice(0, 9);
-                }
+    // ---------- Workspaces (event-driven via Quickshell.Hyprland) ----------
+    // Listens to Hyprland's event socket for instant workspace changes
+    // instead of polling every 500ms.
+    Connections {
+        target: Hyprland
+        function onFocusedWorkspaceChanged() {
+            const next = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1;
+            if (next > root.activeWs) root.lastDirection = 1;
+            else if (next < root.activeWs) root.lastDirection = -1;
+        }
+        function onRawEvent(event) {
+            if (event.name === "createworkspace" || event.name === "destroyworkspace" || event.name === "movewindow") {
+                wsListProbe.running = false;
+                wsListProbe.running = true;
             }
         }
     }
-    Timer { interval: 500; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: { wsProbe.running = false; wsProbe.running = true; } }
+    Process {
+        id: wsListProbe
+        running: false
+        command: ["sh", "-c",
+            "hyprctl workspaces -j 2>/dev/null | tr ',' '\\n' | sed -n 's/.*\"id\": *\\([0-9]*\\).*/\\1/p' | sort -nu | paste -sd,"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const have = this.text.trim().split(",").map(s => parseInt(s)).filter(n => !isNaN(n));
+                root.existingWs = [...new Set([...have, 1, 2, 3, 4, 5])].sort((a,b) => a-b).slice(0, 9);
+            }
+        }
+    }
 
     // ---------- Network status ----------
     Process {
@@ -1262,7 +1501,7 @@ Item {
     readonly property bool isIdle: idleMonitor.isIdle
 
     // ---------- Bluetooth status ----------
-    // bluez-tools path: bt-adapter --info for power state only — the
+    // bluetoothctl path: `bluetoothctl show` for power state only — the
     // per-device connected count is updated by btDevicesProbe which
     // runs on-demand from the Quick panel. Keeping the 5s loop here
     // single-shell-out avoids N+1 forks on machines with several
@@ -1271,12 +1510,12 @@ Item {
         id: btProbe
         running: false
         command: ["bash", "-lc",
-            "p=$(bt-adapter --info 2>/dev/null | awk '/Powered:/{print $2; exit}');"
-            + " if [ \"$p\" = 1 ]; then echo on; else echo off; fi"]
+            "p=$(bluetoothctl show 2>/dev/null | awk '/Powered:/{print $2}');"
+            + " echo \"${p:-no}\""]
         stdout: StdioCollector {
             onStreamFinished: {
                 const s = this.text.trim();
-                const powered = (s === "on");
+                const powered = (s === "yes");
                 if (root.btPowered !== powered) root.btPowered = powered;
                 if (!powered) {
                     if (root.btIcon !== "󰂲") root.btIcon = "󰂲";
@@ -1308,40 +1547,132 @@ Item {
                 const m = p[1].trim() === "true";
                 root.audioVol = isNaN(v) ? 0 : v;
                 root.audioMuted = m;
-                if (m) {
-                    root.audioIcon = root.icoMute;
-                } else if (isNaN(v) || v <= 0) {
-                    root.audioIcon = root.icoVol1;
-                } else if (v < 50) {
-                    root.audioIcon = root.icoVol2;
-                } else {
-                    root.audioIcon = root.icoVol3;
-                }
+                root.updateAudioIcon();
             }
         }
     }
     Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: { audioProbe.running = false; audioProbe.running = true; } }
 
+    // ---------- Keyboard layout ----------
+    Process {
+        id: kbdProbe
+        running: false
+        command: ["bash", "-lc",
+            "hyprctl devices -j 2>/dev/null | jq -r '.keyboards[] | select(.main == true) | .active_keymap'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const raw = this.text.trim();
+                if (raw.length > 0) {
+                    const m = raw.match(/\(([^)]+)\)/);
+                    root.kbdLayout = m ? m[1].toLowerCase() : raw.split(" ")[0].substring(0, 2).toLowerCase();
+                }
+            }
+        }
+    }
+    Timer { interval: 5000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: { kbdProbe.running = false; kbdProbe.running = true; } }
+
+    // ---------- Screen recording indicator ----------
+    property bool screenRecording: false
+    function refreshScreenRecording() {
+        screenRecordingProbe.running = false;
+        screenRecordingProbe.running = true;
+    }
+    Process {
+        id: screenRecordingProbe
+        running: false
+        command: ["bash", "-lc",
+            "if pgrep -f '^gpu-screen-recorder' >/dev/null; then echo '1'; else echo '0'; fi"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.screenRecording = this.text.trim() === "1";
+            }
+        }
+    }
+    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: root.refreshScreenRecording() }
+
+    // ---------- Idle indicator ----------
+    property bool idleDisabled: false
+    function refreshIdleIndicator() {
+        idleProbe.running = false;
+        idleProbe.running = true;
+    }
+    Process {
+        id: idleProbe
+        running: false
+        command: ["bash", "-lc",
+            "if pgrep -x hypridle >/dev/null; then echo '0'; else echo '1'; fi"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.idleDisabled = this.text.trim() === "1";
+            }
+        }
+    }
+    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: root.refreshIdleIndicator() }
+
+    // ---------- Notification silencing indicator ----------
+    property bool notificationSilencing: false
+    function refreshNotificationSilencing() {
+        notificationSilencingProbe.running = false;
+        notificationSilencingProbe.running = true;
+    }
+    Process {
+        id: notificationSilencingProbe
+        running: false
+        command: ["bash", "-lc",
+            "if makoctl mode 2>/dev/null | grep -q 'do-not-disturb'; then echo '1'; else echo '0'; fi"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.notificationSilencing = this.text.trim() === "1";
+            }
+        }
+    }
+    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: root.refreshNotificationSilencing() }
+
+    // ---------- Voxtype indicator ----------
+    property string voxtypeStatus: "idle"
+    function refreshVoxtype() {
+        voxtypeProbe.running = false;
+        voxtypeProbe.running = true;
+    }
+    Process {
+        id: voxtypeProbe
+        running: false
+        command: ["bash", "-lc",
+            "if command -v voxtype >/dev/null 2>&1; then "
+            + "  timeout 2 voxtype status --format json 2>/dev/null | jq -r '.class // \"idle\"' 2>/dev/null || echo 'idle'; "
+            + "else echo 'idle'; fi"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const s = this.text.trim();
+                if (s === "recording" || s === "transcribing") root.voxtypeStatus = s;
+                else root.voxtypeStatus = "idle";
+            }
+        }
+    }
+    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: root.refreshVoxtype() }
+
     // ---------- Bluetooth device probe ----------
-    // Walks every paired/known device through `bt-device --info` to pull
-    // its name + connected/paired/trusted flags. Cheap at the few-devices-
-    // per-machine scale; the `bt-device -l` output is "Name (MAC)" lines
-    // with a leading "Added devices:" header that tail strips.
+    // Walks every known device through `bluetoothctl info` to pull
+    // its name + connected/paired/trusted flags + battery percentage.
     Process {
         id: btDevicesProbe
         running: false
         command: ["bash", "-lc",
-            "macs=$(bt-device -l 2>/dev/null | tail -n +2"
-            + "   | sed -n 's/.*(\\([0-9A-F:]\\{17\\}\\))$/\\1/p');"
-            + " for m in $macs; do"
-            + "   info=$(bt-device --info \"$m\" 2>/dev/null);"
-            + "   [ -z \"$info\" ] && continue;"
+            "bluetoothctl devices 2>/dev/null | while read _ mac rest; do"
+            + "   [ -z \"$mac\" ] && continue;"
+            + "   info=$(bluetoothctl info \"$mac\" 2>/dev/null);"
             + "   name=$(printf '%s' \"$info\" | awk -F': ' '/^[[:space:]]*Name:/{print $2; exit}');"
-            + "   conn=$(printf '%s' \"$info\" | awk '/^[[:space:]]*Connected: 1/{print 1; exit}');"
-            + "   paired=$(printf '%s' \"$info\" | awk '/^[[:space:]]*Paired: 1/{print 1; exit}');"
-            + "   trusted=$(printf '%s' \"$info\" | awk '/^[[:space:]]*Trusted: 1/{print 1; exit}');"
-            + "   printf '%s\\t%s\\t%s\\t%s\\t%s\\n' \"$m\" \"${name:-$m}\" \"${conn:-0}\" \"${paired:-0}\" \"${trusted:-0}\";"
+            + "   conn=$(printf '%s' \"$info\" | awk -F': ' '/^[[:space:]]*Connected:/{print $2; exit}');"
+            + "   paired=$(printf '%s' \"$info\" | awk -F': ' '/^[[:space:]]*Paired:/{print $2; exit}');"
+            + "   trusted=$(printf '%s' \"$info\" | awk -F': ' '/^[[:space:]]*Trusted:/{print $2; exit}');"
+            + "   bat=$(printf '%s' \"$info\" | awk -F'[()]' '/^[[:space:]]*Battery Percentage:/{print $2; exit}');"
+            + "   printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \"$mac\" \"${name:-$mac}\" \"${conn:-no}\" \"${paired:-no}\" \"${trusted:-no}\" \"${bat:-}\";"
             + " done"]
         stdout: StdioCollector {
             onStreamFinished: {
@@ -1351,9 +1682,10 @@ Item {
                     return {
                         mac:       f[0] || "",
                         name:      (f[1] || "").trim() || (f[0] || ""),
-                        connected: f[2] === "1",
-                        paired:    f[3] === "1",
-                        trusted:   f[4] === "1"
+                        connected: f[2] === "yes",
+                        paired:    f[3] === "yes",
+                        trusted:   f[4] === "yes",
+                        battery:   f[5] ? parseInt(f[5]) : null
                     };
                 });
                 // Connected first, then paired, then everything else.
@@ -1440,6 +1772,49 @@ Item {
         }
     }
 
+    // ---------- Hotspot status ----------
+    // Queries omarchy-hotspot status every 5 s so the bar icon reflects
+    // the current state and connected-client count in near-real-time.
+    Process {
+        id: hotspotProbe
+        running: false
+        command: ["omarchy-hotspot", "status"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const t = this.text.trim();
+                if (t.startsWith("active:")) {
+                    root.hotspotActive = true;
+                    root.hotspotClients = parseInt(t.split(":")[1]) || 0;
+                } else {
+                    root.hotspotActive = false;
+                    root.hotspotClients = 0;
+                }
+            }
+        }
+    }
+    Timer {
+        interval: 5000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: { hotspotProbe.running = false; hotspotProbe.running = true; }
+    }
+
+    // ---------- WiFi share QR ----------
+    // Runs omarchy-wifi-share <ssid> to generate a QR code for the
+    // currently-connected network. On success it displays the QR popup.
+    Process {
+        id: shareProbe
+        running: false
+        command: ["/home/ddrh/.local/share/omarchy/bin/omarchy-wifi-share", root.shareSsid]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const t = this.text.trim();
+                if (t.startsWith("success:")) {
+                    root.sharePassword = t.substring(8);
+                    root.shareVisible = true;
+                }
+            }
+        }
+    }
+
     // ---------- Audio sinks probe ----------
     // wpctl status's structured form: lines like
     //   "*    52. WH-1000XM4              [vol: 0.45]"
@@ -1489,6 +1864,85 @@ Item {
         }
     }
 
+    // ---------- Audio sources probe ----------
+    // Mirrors the sinks probe above: parses the Sources subsection from
+    // `wpctl status` to populate audioSources with {id, name, isDefault}.
+    Process {
+        id: audioSourcesProbe
+        running: false
+        command: ["bash", "-lc",
+            "wpctl status 2>/dev/null | awk '"
+            + "  /^Audio$/                                    {sec=\"audio\"; sub=\"\"; next}"
+            + "  /^[A-Z][a-zA-Z]+$/                           {sec=\"\";      sub=\"\"; next}"
+            + "  /^[[:space:]]*[├└]─[[:space:]]*Sources:/       {sub=\"sources\"; next}"
+            + "  /^[[:space:]]*[├└]─/                           {sub=\"\";      next}"
+            + "  sec==\"audio\" && sub==\"sources\" {"
+            + "    star=(index($0,\"*\")>0 && index($0,\"*\")<index($0,\".\")) ? 1 : 0;"
+            + "    line=$0;"
+            + "    sub(/^[ │├─└*]+/, \"\", line);"
+            + "    if (match(line, /^([0-9]+)\\. (.+)\\[/, m)) {"
+            + "      gsub(/[ \\t]+$/, \"\", m[2]);"
+            + "      printf \"%s\\t%s\\t%d\\n\", m[1], m[2], star;"
+            + "    }"
+            + "  }'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = this.text.trim().split("\n").filter(s => s.length > 0);
+                const sources = lines.map(line => {
+                    const f = line.split("\t");
+                    return {
+                        id: f[0] || "",
+                        name: (f[1] || "").trim(),
+                        isDefault: f[2] === "1"
+                    };
+                });
+                const ser = JSON.stringify(sources);
+                if (ser !== root._audioSourcesSer) {
+                    root._audioSourcesSer = ser;
+                    root.audioSources = sources;
+                }
+                const def = sources.find(s => s.isDefault);
+                if (def && root.audioDefaultSource !== def.id) root.audioDefaultSource = def.id;
+            }
+        }
+    }
+
+    // ---------- Playback streams (sink-inputs) probe ----------
+    // Parses individual audio playback streams (applications playing audio)
+    // from pactl list sink-inputs. Each entry: {id, name, vol, mute}.
+    Process {
+        id: playbackStreamsProbe
+        running: false
+        command: ["bash", "-lc",
+            "pactl list sink-inputs 2>/dev/null | awk '"
+            + "  /^Sink Input #/    { id = $3; sub(/^#/,\"\",id); }"
+            + "  /^[[:space:]]*Mute: / { mute = ($2 == \"yes\") ? 1 : 0; }"
+            + "  /^[[:space:]]*Volume: / {"
+            + "    if (match($0, /[0-9]+%/)) {"
+            + "      vol = substr($0, RSTART, RLENGTH-1);"
+            + "    } else vol = \"0\";"
+            + "  }"
+            +             "  /^[[:space:]]*application\\.name = / {"
+            +             "    name = $3; gsub(/[\"]/,\"\",name);"
+            + "    if (id != \"\") printf \"%s\\t%s\\t%s\\t%s\\n\", id, name, vol, mute;"
+            + "    id=\"\"; vol=\"\"; mute=\"\"; name=\"\";"
+            + "  }'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = this.text.trim().split("\n").filter(s => s.length > 0);
+                const streams = lines.map(line => {
+                    const f = line.split("\t");
+                    return { id: f[0] || "", name: f[1] || "", vol: parseInt(f[2]) || 0, mute: f[3] === "1" };
+                });
+                const ser = JSON.stringify(streams);
+                if (ser !== root._playbackStreamsSer) {
+                    root._playbackStreamsSer = ser;
+                    root.playbackStreams = streams;
+                }
+            }
+        }
+    }
+
     // ---------- Power-profile probe ----------
     // On-demand only: triggered once at startup so the Battery tile has
     // current state ready, and from setPowerProfile()/refreshPowerProfile()
@@ -1519,6 +1973,8 @@ Item {
         }
     }
     Component.onCompleted: refreshPowerProfile()
+    Timer { interval: 3000; running: true; repeat: true; triggeredOnStart: false
+        onTriggered: { powerProfileProbe.running = false; powerProfileProbe.running = true; } }
 
     // ---------- Omarchy update probe ----------
     // Mirrors waybar's custom/update: omarchy-update-available exits 0 and
@@ -1759,12 +2215,20 @@ Item {
     BarWhiterose     { root: root; visible: root.barVariant === "whiterose" }
     TooltipOverlay   { root: root }
     SystemPopup      { root: root }
-    CalendarPopup    { root: root }
-    ScreenshotsPopup { root: root }
-    VideosPopup      { root: root }
-    AetherPopup      { root: root }
-    DisplayPopup     { root: root }
-    WeatherPopup     { root: root }
+    CalendarPopup        { root: root }
+    ScreenshotsPopup     { root: root }
+    VideosPopup          { root: root }
+    AetherPopup          { root: root }
+    DisplayPopup         { root: root }
+    WeatherPopup         { root: root }
+    PowerProfilePopup    { root: root }
+    WifiPopup            { root: root }
+    WifiSharePopup       { root: root }
+    BluetoothPopup       { root: root }
+    AudioPopup           { root: root }
+    PowerPopup           { root: root }
+    ThemePopup           { root: root }
+    WallpaperPopup       { root: root }
 
     // ---------- IPC ----------
     // Lets external keybinds drive the screenshots popup. Wire up in
@@ -1789,6 +2253,39 @@ Item {
         }
         function open(): void { root.openVideos(); }
         function close(): void { root.videosVisible = false; }
+    }
+
+    // bind = ..., F10, exec, qs -c desktop ipc call powerprofile toggle
+    IpcHandler {
+        target: "powerprofile"
+        function toggle(): void {
+            if (root.powerProfileVisible) root.powerProfileVisible = false;
+            else root.openPowerProfile();
+        }
+        function open(): void  { root.openPowerProfile(); }
+        function close(): void { root.powerProfileVisible = false; }
+    }
+
+    // bind = ..., F11, exec, qs -c desktop ipc call wifi toggle
+    IpcHandler {
+        target: "wifi"
+        function toggle(): void {
+            if (root.wifiVisible) root.wifiVisible = false;
+            else root.openWifi();
+        }
+        function open(): void  { root.openWifi(); }
+        function close(): void { root.wifiVisible = false; }
+    }
+
+    // bind = ..., F12, exec, qs -c desktop ipc call bluetooth toggle
+    IpcHandler {
+        target: "bluetooth"
+        function toggle(): void {
+            if (root.btVisible) root.btVisible = false;
+            else root.openBluetooth();
+        }
+        function open(): void  { root.openBluetooth(); }
+        function close(): void { root.btVisible = false; }
     }
 
     // bind = SUPER, W, exec, qs ipc call weather toggle
@@ -1849,6 +2346,16 @@ Item {
         function btop(): void  { root.run("omarchy-launch-or-focus-tui btop"); }
     }
 
+    IpcHandler {
+        target: "audio"
+        function toggle(): void {
+            if (root.audioVisible) root.audioVisible = false;
+            else root.openAudio();
+        }
+        function open(): void  { root.openAudio(); }
+        function close(): void { root.audioVisible = false; }
+    }
+
     // Bar face switch. Toggle from a keybind, or jump straight to one:
     //   bind = SUPER SHIFT, B, exec, qs -c desktop ipc call bar toggle
     // Also surfaced as a "Bar Style" row in the omni palette.
@@ -1860,6 +2367,82 @@ Item {
         function hackerman(): void { root.setBarVariant("hackerman"); }
         function whiterose(): void { root.setBarVariant("whiterose"); }
         function plain(): void     { root.setBarVariant("whiterose"); }
+        function autohide(): void  { root.toggleBarAutoHide(); }
+        function reveal(): void    { root.setBarAutoHide(true); }
+        function fixed(): void     { root.setBarAutoHide(false); }
+    }
+
+    // Hardware keys and SUPER ALT up/down trigger the OSD via IPC.
+    // bindeld = ,XF86AudioRaiseVolume, exec, qs -c desktop ipc call osd volume +5
+    // bindeld = ,XF86MonBrightnessUp,  exec, qs -c desktop ipc call osd brightness +5
+    IpcHandler {
+        target: "osd"
+        function brightness(delta: int): void {
+            root.setBrightness(root.brightnessPct + delta);
+        }
+        function volume(delta: int): void {
+            root.setVolume(root.audioVol + delta);
+        }
+    }
+
+    // Mute toggle — shows OSD briefly (progress bar goes to 0 / jumps back)
+    // bindeld = ,XF86AudioMute, Mute, exec, qs -c desktop ipc call audio mute
+    IpcHandler {
+        target: "audio"
+        function mute(): void {
+            root.toggleMute();
+            root.osdPct = root.audioMuted ? 0 : root.audioVol;
+            root.osdActive = true;
+            osdTimer.restart();
+        }
+    }
+
+    // Media playback keys — pass through to playerctl (no OSD)
+    // bindld = ,XF86AudioNext,  Next track,     exec, qs -c desktop ipc call playerctl next
+    // bindld = ,XF86AudioPause, Pause,          exec, qs -c desktop ipc call playerctl playpause
+    // bindld = ,XF86AudioPlay,  Play,           exec, qs -c desktop ipc call playerctl playpause
+    // bindld = ,XF86AudioPrev,  Previous track, exec, qs -c desktop ipc call playerctl previous
+    IpcHandler {
+        target: "playerctl"
+        function next(): void      { root.run("playerctl next"); }
+        function previous(): void  { root.run("playerctl previous"); }
+        function playpause(): void { root.run("playerctl play-pause"); }
+    }
+
+    // Power-actions popup (SUPER+ESC)
+    // bind = SUPER, ESCAPE, exec, qs -c desktop ipc call power toggle
+    IpcHandler {
+        target: "power"
+        function toggle(): void {
+            if (root.powerVisible) root.powerVisible = false;
+            else root.openPower();
+        }
+        function open(): void  { root.openPower(); }
+        function close(): void { root.powerVisible = false; }
+    }
+
+    // Theme-selector popup (SUPER+T)
+    // bind = SUPER, T, exec, qs -c desktop ipc call themes toggle
+    IpcHandler {
+        target: "themes"
+        function toggle(): void {
+            if (root.themeVisible) root.themeVisible = false;
+            else root.openTheme();
+        }
+        function open(): void  { root.openTheme(); }
+        function close(): void { root.themeVisible = false; }
+    }
+
+    // Wallpaper selector popup (SUPER+CTRL+SPACE)
+    // bind = SUPER CTRL, SPACE, exec, qs -c desktop ipc call wallpaper toggle
+    IpcHandler {
+        target: "wallpaper"
+        function toggle(): void {
+            if (root.wallpaperVisible) root.wallpaperVisible = false;
+            else root.openWallpaper();
+        }
+        function open(): void  { root.openWallpaper(); }
+        function close(): void { root.wallpaperVisible = false; }
     }
 
     // ---------- MPRIS (now playing) ----------

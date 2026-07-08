@@ -24,9 +24,12 @@ PanelWindow {
         left:   hk.root.barEdge !== "right"
         right:  hk.root.barEdge !== "left"
     }
-    implicitHeight: hk.root.isHorizontal ? hk.root.barHeight : 0
+    implicitHeight: hk.root.isHorizontal
+        ? (hk.root.barAutoHide && !hk.root.barReveal ? 1 : hk.root.barHeight)
+        : 0
     implicitWidth:  hk.root.isHorizontal ? 0 : hk.root.barHeight
-    exclusiveZone:  hk.root.barHeight
+    exclusiveZone:  hk.root.barAutoHide && !hk.root.barReveal
+                    ? 0 : hk.root.barHeight
 
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "omarchy-menu"
@@ -91,12 +94,37 @@ PanelWindow {
     function claimAnchors() {
         hk.root.calendarAnchorItem = hk.root.isHorizontal ? clockTag : clockTagV;
         hk.root.weatherAnchorItem  = hk.root.isHorizontal ? wxCell   : wxCellV;
+        hk.root.powerProfileAnchorItem = hk.root.isHorizontal ? batteryStat : batteryStatV;
+        hk.root.wifiAnchorItem        = hk.root.isHorizontal ? wifiCell : wifiCellV;
+        hk.root.btAnchorItem          = hk.root.isHorizontal ? btCell : null;
+        hk.root.audioAnchorItem       = hk.root.isHorizontal ? audioCell : null;
     }
     onVisibleChanged: if (visible) hk.claimAnchors();
     Connections {
         target: hk.root
         function onBarEdgeChanged() { if (hk.visible) hk.claimAnchors(); }
     }
+
+    // Content wrapper — PanelWindow doesn't support transform, so clip
+    // ensures children don't spill when the window is 1px auto-hide tall.
+    Item {
+        id: barContent
+        anchors.fill: parent
+        clip: true
+
+        // HoverHandler coexists with child MouseAreas — receives hover
+        // without blocking children, so the bar stays visible while the
+        // cursor is over it (prevents hide timer from firing).
+        HoverHandler {
+            onHoveredChanged: {
+                if (hovered) {
+                    hk.root.barReveal = true;
+                    hk.root._barTimerStop();
+                } else {
+                    hk.root._barTimerRestart();
+                }
+            }
+        }
 
     // ---------- Background + chrome ----------
     Rectangle {
@@ -293,7 +321,6 @@ PanelWindow {
                             font.family: hk.root.mono
                             font.pixelSize: 11
                             font.weight: parent.active ? Font.Bold : Font.Normal
-                            Behavior on color { ColorAnimation { duration: 140 } }
                         }
                         // Active sector gets a lit underbar.
                         Rectangle {
@@ -339,11 +366,22 @@ PanelWindow {
 
             HackerStat {
                 root: hk.root
+                label: "KBD"
+                value: hk.root.kbdLayout
+                valueColor: hk.root.ink
+                tooltip: "Click to switch layout"
+                onActivated: hk.root.cycleKbdLayout()
+            }
+
+            HackerStat {
+                root: hk.root
                 label: "CPU"
                 value: hk.root.cpuVal + "%"
                 gauge: hk.root.cpuVal
-                valueColor: hk.root.cpuVal > 80 ? hk.root.seal : hk.root.ink
-                tooltip: "CPU " + Math.round(hk.root.cpuVal) + "%"
+                valueColor: hk.root.powerProfile === "power-saver" ? hk.root.green
+                            : hk.root.powerProfile === "performance" ? hk.root.accent
+                            : (hk.root.cpuVal > 80 ? hk.root.seal : hk.root.ink)
+                tooltip: "CPU " + Math.round(hk.root.cpuVal) + "%  MEM " + Math.round(hk.root.memVal) + "%"
                 onActivated: hk.root.run("omarchy-launch-or-focus-tui btop")
             }
 
@@ -358,6 +396,7 @@ PanelWindow {
             }
 
             HackerStat {
+                id: wifiCell
                 root: hk.root
                 glyph: hk.root.netIcon
                 value: {
@@ -368,7 +407,7 @@ PanelWindow {
                     }
                     return "OFFLINE";
                 }
-                valueColor: hk.root.netKind === "none" ? hk.root.seal : hk.root.ink
+                valueColor: hk.root.netKind === "wifi" ? hk.root.accent : (hk.root.netKind === "none" ? hk.root.seal : hk.root.ink)
                 gauge: hk.root.netKind === "wifi" ? hk.root.wifiSignal : -1
                 tooltip: {
                     if (hk.root.netKind === "eth") return "Ethernet";
@@ -376,34 +415,39 @@ PanelWindow {
                         return "Wi-Fi · " + (hk.root.wifiSsid || "(hidden)") + " · " + hk.root.wifiSignal + "%";
                     return "Offline";
                 }
-                onActivated: hk.root.run("omarchy-launch-wifi")
+                onActivated: hk.root.openWifi()
             }
 
             HackerStat {
+                id: audioCell
                 root: hk.root
                 glyph: hk.root.audioIcon
                 value: hk.root.audioMuted ? "MUTE" : hk.root.audioVol + "%"
                 gauge: hk.root.audioMuted ? -1 : hk.root.audioVol
-                valueColor: hk.root.audioMuted ? hk.root.seal : hk.root.ink
+                valueColor: hk.root.audioVol >= 100 ? hk.root.accent : (hk.root.audioMuted ? hk.root.seal : hk.root.ink)
                 tooltip: hk.root.audioMuted
                          ? "Audio muted · " + hk.root.audioVol + "%"
                          : "Audio " + hk.root.audioVol + "%"
-                onActivated: hk.root.run("omarchy-launch-audio")
+                onActivated: hk.root.openAudio()
                 onRightActivated: hk.root.run("pamixer -t")
+                onWheelActivated: (delta, mx, my) => {
+                    hk.root.setVolume(hk.root.audioVol + (delta > 0 ? 5 : -5));
+                    const tip = hk.root.audioMuted
+                        ? "Audio muted · " + hk.root.audioVol + "%"
+                        : "Audio " + hk.root.audioVol + "%";
+                    const p = mapToItem(null, mx, my);
+                    hk.root.showTooltip(tip, p.x, p.y);
+                }
             }
 
             HackerStat {
+                id: btCell
                 root: hk.root
                 glyph: hk.root.btIcon
                 value: hk.root.btPowered ? (hk.root.btCount > 0 ? hk.root.btCount + "DEV" : "ON") : "OFF"
-                valueColor: hk.root.btPowered ? hk.root.ink : hk.dim
-                tooltip: {
-                    if (!hk.root.btPowered) return "Bluetooth off";
-                    return hk.root.btCount > 0
-                        ? "Bluetooth · " + hk.root.btCount + " connected"
-                        : "Bluetooth on";
-                }
-                onActivated: hk.root.run("omarchy-launch-bluetooth")
+                valueColor: hk.root.btPowered ? hk.root.accent : hk.dim
+                tooltip: hk.root.btTooltip
+                onActivated: hk.root.openBluetooth()
             }
 
             HackerStat {
@@ -438,14 +482,17 @@ PanelWindow {
             }
 
             HackerStat {
+                id: batteryStat
                 root: hk.root
                 label: "BAT"
                 value: hk.root.batVal + "%"
                 gauge: hk.root.batVal
-                valueColor: hk.root.batVal <= 10 ? hk.root.seal
-                            : hk.root.batVal <= 20 ? hk.root.indigo : hk.root.ink
-                gaugeColor: hk.root.batState === "Charging" || hk.root.batState === "Full"
-                            ? hk.root.indigo : (hk.root.batVal <= 20 ? hk.root.seal : hk.root.ink)
+                valueColor: (hk.root.batState === "Charging" || hk.root.batState === "Full" || hk.root.batState === "Not charging")
+                            ? hk.root.accent
+                            : (hk.root.batVal <= 10 ? hk.root.seal : hk.root.batVal <= 20 ? hk.root.indigo : hk.root.ink)
+                gaugeColor: hk.root.batState === "Charging" || hk.root.batState === "Full" || hk.root.batState === "Not charging"
+                            ? hk.root.accent
+                            : (hk.root.batVal <= 20 ? hk.root.seal : hk.root.ink)
                 tooltip: {
                     let s = "Battery " + hk.root.batVal + "%";
                     if (hk.root.batPower >= 0.05) {
@@ -455,7 +502,19 @@ PanelWindow {
                     }
                     return s;
                 }
-                onActivated: hk.root.run("omarchy-menu power")
+                onActivated: hk.root.openPowerProfile()
+            }
+
+            // Auto-hide toggle: pin icon, seal when auto-hide is active.
+            HackerStat {
+                root: hk.root
+                glyph: "󰐃"
+                value: hk.root.barAutoHide ? "AUTO" : "PIN "
+                valueColor: hk.root.barAutoHide ? hk.root.seal : hk.dim
+                tooltip: hk.root.barAutoHide
+                         ? "Auto-hide on · Click to pin bar"
+                         : "Auto-hide off · Click to hide bar when idle"
+                onActivated: hk.root.toggleBarAutoHide()
             }
 
             // dim divider
@@ -480,13 +539,13 @@ PanelWindow {
                 }
             }
 
-            // Edge mover — same cycleBarEdge as the zen bar.
-            HackerStat {
-                root: hk.root
-                glyph: hk.root.edgeArrow()
-                tooltip: "Move bar"
-                onActivated: hk.root.cycleBarEdge()
-            }
+            // // Edge mover — same cycleBarEdge as the zen bar.
+            // HackerStat {
+            //     root: hk.root
+            //     glyph: hk.root.edgeArrow()
+            //     tooltip: "Move bar"
+            //     onActivated: hk.root.cycleBarEdge()
+            // }
         }
     }
 
@@ -538,7 +597,6 @@ PanelWindow {
                 font.family: hk.root.mono
                 font.pixelSize: 11
                 font.weight: active ? Font.Bold : Font.Normal
-                Behavior on color { ColorAnimation { duration: 140 } }
                 MouseArea {
                     anchors.fill: parent
                     anchors.margins: -4
@@ -603,13 +661,14 @@ PanelWindow {
                 onClicked: hk.root.run("omarchy-launch-or-focus-tui btop") }
         }
         Text {
+            id: wifiCellV
             Layout.alignment: Qt.AlignHCenter
             text: hk.root.netIcon
-            color: hk.root.netKind === "none" ? hk.root.seal : hk.root.ink
+            color: hk.root.netKind === "wifi" ? hk.root.accent : (hk.root.netKind === "none" ? hk.root.seal : hk.root.ink)
             font.family: hk.root.mono
             font.pixelSize: 12
             MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor
-                onClicked: hk.root.run("omarchy-launch-wifi") }
+                onClicked: hk.root.openWifi() }
         }
         Text {
             Layout.alignment: Qt.AlignHCenter
@@ -619,7 +678,7 @@ PanelWindow {
             font.pixelSize: 12
             MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
-                onClicked: (e) => { if (e.button === Qt.RightButton) hk.root.run("pamixer -t"); else hk.root.run("omarchy-launch-audio"); } }
+                onClicked: (e) => { if (e.button === Qt.RightButton) hk.root.run("pamixer -t"); else hk.root.openAudio(); } }
         }
         // weather glyph (anchor target in vertical mode)
         Text {
@@ -633,13 +692,16 @@ PanelWindow {
                 onClicked: { if (hk.root.weatherVisible) hk.root.weatherVisible = false; else hk.root.openWeather(); } }
         }
         Text {
+            id: batteryStatV
             Layout.alignment: Qt.AlignHCenter
             text: hk.root.batVal + ""
-            color: hk.root.batVal <= 10 ? hk.root.seal : hk.root.batVal <= 20 ? hk.root.indigo : hk.root.ink
+            color: (hk.root.batState === "Charging" || hk.root.batState === "Full" || hk.root.batState === "Not charging")
+                    ? hk.root.accent
+                    : (hk.root.batVal <= 10 ? hk.root.seal : hk.root.batVal <= 20 ? hk.root.indigo : hk.root.ink)
             font.family: hk.root.mono
             font.pixelSize: 9
             MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor
-                onClicked: hk.root.run("omarchy-menu power") }
+                onClicked: hk.root.openPowerProfile() }
         }
 
         Rectangle { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 12; Layout.preferredHeight: 1; color: hk.dimmer }
@@ -654,5 +716,6 @@ PanelWindow {
             MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor
                 onClicked: hk.root.cycleBarEdge() }
         }
+    }
     }
 }

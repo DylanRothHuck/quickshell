@@ -4,7 +4,7 @@ import Quickshell.Wayland
 
 // Tier-B popup chrome. Full-screen overlay PanelWindow + centered card with
 // the OmniMenu visual language: mono-caps header (title + status subtitle),
-// scale-from-center reveal, click-outside dismiss, Esc dismiss, optional
+// drop-from-top reveal, click-outside dismiss, Esc dismiss, optional
 // footer hint line. Widgets put their own body inside as default children
 // and listen to keyPressed() for widget-specific keyboard nav.
 //
@@ -46,7 +46,7 @@ PanelWindow {
     property string anchorEdge: ""
     property real   anchorBarX: 0
     property real   anchorBarY: 0
-    property real   anchorGap: 8
+    property real   anchorGap: 0
     readonly property bool _anchored: anchorEdge === "top"  || anchorEdge === "bottom"
                                    || anchorEdge === "left" || anchorEdge === "right"
 
@@ -66,7 +66,7 @@ PanelWindow {
     property real _reveal: revealed ? 1 : 0
     Behavior on _reveal {
         NumberAnimation {
-            duration: card.plain ? 0 : (card.revealed ? 220 : 140)
+            duration: card.plain ? 0 : (card.revealed ? 180 : 100)
             easing.type: card.revealed ? Easing.OutCubic : Easing.InCubic
         }
     }
@@ -76,63 +76,68 @@ PanelWindow {
         onClicked: card.dismiss()
     }
 
-    Rectangle {
-        id: surface
-        width: card.cardWidth
-        height: card.cardHeight > 0 ? card.cardHeight : (bodyCol.implicitHeight + 34)
-        color: card.theme.bg
-        border.color: card.theme.sep
-        border.width: 1
-        radius: card.plain ? 0 : card.theme.cornerRadius
-
+    // Clipping viewport — for top-anchored cards the clip hides any part of
+    // the card above the bar's bottom edge during the drop-from-top animation.
+    Item {
+        id: cardViewport
+        clip: card.anchorEdge === "top"
         x: {
-            if (!card._anchored) return (parent.width - width) / 2;
+            if (!card._anchored) return (cardViewport.parent.width - card.cardWidth) / 2;
             if (card.anchorEdge === "left")  return card.theme.barHeight + card.anchorGap;
-            if (card.anchorEdge === "right") return parent.width - card.theme.barHeight - width - card.anchorGap;
+            if (card.anchorEdge === "right") return cardViewport.parent.width - card.theme.barHeight - card.cardWidth - card.anchorGap;
             return Math.max(card.anchorGap,
-                            Math.min(parent.width - width - card.anchorGap,
-                                     card.anchorBarX - width / 2));
+                            Math.min(cardViewport.parent.width - card.cardWidth - card.anchorGap,
+                                     card.anchorBarX - card.cardWidth / 2));
         }
         y: {
-            if (!card._anchored) return (parent.height - height) / 2;
             if (card.anchorEdge === "top")    return card.theme.barHeight + card.anchorGap;
-            if (card.anchorEdge === "bottom") return parent.height - card.theme.barHeight - height - card.anchorGap;
-            return Math.max(card.anchorGap,
-                            Math.min(parent.height - height - card.anchorGap,
-                                     card.anchorBarY - height / 2));
-        }
-
-        transform: Scale {
-            origin.x: {
-                if (!card._anchored) return surface.width / 2;
-                if (card.anchorEdge === "left")  return 0;
-                if (card.anchorEdge === "right") return surface.width;
-                return Math.max(0, Math.min(surface.width, card.anchorBarX - surface.x));
+            if (card.anchorEdge === "bottom") return cardViewport.parent.height - card.theme.barHeight - surface.height - card.anchorGap;
+            if (card._anchored) {
+                return Math.max(card.anchorGap,
+                                Math.min(cardViewport.parent.height - surface.height - card.anchorGap,
+                                         card.anchorBarY - surface.height / 2));
             }
-            origin.y: {
-                if (!card._anchored) return surface.height / 2;
-                if (card.anchorEdge === "top")    return 0;
-                if (card.anchorEdge === "bottom") return surface.height;
-                return Math.max(0, Math.min(surface.height, card.anchorBarY - surface.y));
-            }
-            xScale: card.plain ? 1 : card._reveal
-            yScale: card.plain ? 1 : card._reveal
+            return (cardViewport.parent.height - surface.height) / 2;
         }
+        width: card.cardWidth
+        height: surface.height
 
-        // Swallow clicks so the dismiss MouseArea doesn't fire on body taps.
-        MouseArea { anchors.fill: parent }
+        Rectangle {
+            id: surface
+            x: 0
+            width: parent.width
+            height: card.cardHeight > 0 ? card.cardHeight : (bodyCol.implicitHeight + 34)
+            color: card.theme.bg
+            border.color: card.theme.sep
+            border.width: 1
+            radius: card.plain ? 0 : card.theme.cornerRadius
 
-        focus: card.revealed
-        Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Escape) {
-                card.dismiss();
-                event.accepted = true;
-                return;
+            opacity: card.plain ? 1 : 0.3 + 0.7 * card._reveal
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: card.plain ? 0 : 100
+                    easing.type: Easing.OutCubic
+                }
             }
-            card.keyPressed(event);
-        }
 
-        Column {
+            transform: Translate {
+                y: card.plain ? 0 : (1 - card._reveal) * -(surface.height + 24)
+            }
+
+            // Swallow clicks so the dismiss MouseArea doesn't fire on body taps.
+            MouseArea { anchors.fill: parent }
+
+            focus: card.revealed
+            Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape) {
+                    card.dismiss();
+                    event.accepted = true;
+                    return;
+                }
+                card.keyPressed(event);
+            }
+
+            Column {
             id: bodyCol
             anchors.fill: parent
             anchors.margins: card.plain ? 14 : 17
@@ -213,4 +218,5 @@ PanelWindow {
             }
         }
     }
+}
 }

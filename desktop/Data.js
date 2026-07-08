@@ -7,6 +7,7 @@ const favCategory = "Favourites";
 const histCategory = "History";
 const procCategory = "Processes";
 const themeCategory = "Themes";
+const webCategory = "Web";
 
 // fd already respects .gitignore, the global ignore file, and skips
 // hidden files by default. These excludes catch build dirs that
@@ -69,6 +70,7 @@ const categoryNav = [
     { title: "Apps",    icon: "󰀻", category: "Browse", isCategory: true, target: "App",         keywords: "apps applications launcher programs software desktop" },
     { title: "Files",   icon: "󰉋", category: "Browse", isCategory: true, target: fileCategory,  keywords: "files file search find folder browse path open image picture document text fd" },
     { title: "GitHub",  icon: "󰊤", category: "Browse", isCategory: true, target: ghCategory,    keywords: "github gh repo repository search code clone star issue pull request pr open source git" },
+    { title: "Web",     icon: "󰖟", category: "Browse", isCategory: true, target: webCategory,   keywords: "web search browse internet google duckduckgo query find link" },
     { title: "Favourites", icon: "󰓎", category: "Browse", isCategory: true, target: favCategory,  keywords: "favourites favorites favs starred pinned bookmarks marked" },
     { title: "History", icon: "󰋚", category: "Browse", isCategory: true, target: histCategory,    keywords: "history recent recents log past activity used opened" },
     { title: "Style",   icon: "󰏘", category: "Browse", isCategory: true, target: "Style",       keywords: "style theme appearance look font background corners waybar screensaver" },

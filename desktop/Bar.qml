@@ -26,9 +26,13 @@ PanelWindow {
     // innerSign tells which side gets the extra outer air (away from screen).
     readonly property int innerSign: bar.root.barEdge === "top" ? 1 : (bar.root.barEdge === "bottom" ? -1 : 0)
 
-    implicitHeight: bar.root.isHorizontal ? bar.root.barHeight + extraThickness : 0
+    implicitHeight: bar.root.isHorizontal
+        ? (bar.root.barAutoHide && !bar.root.barReveal ? 1 : bar.root.barHeight + extraThickness)
+        : 0
     implicitWidth:  bar.root.isHorizontal ? 0 : bar.root.barHeight
-    exclusiveZone:  bar.root.isHorizontal ? bar.root.barHeight + extraThickness : bar.root.barHeight
+    exclusiveZone:  bar.root.barAutoHide && !bar.root.barReveal
+                    ? 0
+                    : (bar.root.isHorizontal ? bar.root.barHeight + extraThickness : bar.root.barHeight)
 
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "omarchy-menu"
@@ -39,7 +43,32 @@ PanelWindow {
     onVisibleChanged: if (visible) {
         bar.root.calendarAnchorItem = clockItem;
         bar.root.weatherAnchorItem = weatherMod;
+        bar.root.powerProfileAnchorItem = batteryMod;
+        bar.root.wifiAnchorItem = netMod;
+        bar.root.btAnchorItem = btMod;
+        bar.root.audioAnchorItem = audioMod;
     }
+
+    // Content wrapper — PanelWindow doesn't support transform, so clip
+    // ensures children don't spill when the window is 1px auto-hide tall.
+    Item {
+        id: barContent
+        anchors.fill: parent
+        clip: true
+
+        // HoverHandler coexists with child MouseAreas — receives hover
+        // without blocking children, so the bar stays visible while the
+        // cursor is over it (prevents hide timer from firing).
+        HoverHandler {
+            onHoveredChanged: {
+                if (hovered) {
+                    bar.root.barReveal = true;
+                    bar.root._barTimerStop();
+                } else {
+                    bar.root._barTimerRestart();
+                }
+            }
+        }
 
     // In cloud mode the slab bg is replaced by a single rounded backdrop
     // sized to match the inner bar (barHeight tall, with cloudAir margins
@@ -106,21 +135,21 @@ PanelWindow {
         ]
 
         // 静 (stillness) mark, parked in the bar's trailing corner.
-        Text {
-            visible: !bar.cloudMode
-            anchors.right:  bar.root.isHorizontal ? parent.right  : undefined
-            anchors.bottom: bar.root.isHorizontal ? undefined     : parent.bottom
-            anchors.rightMargin:  bar.root.isHorizontal ? 8 : 0
-            anchors.bottomMargin: bar.root.isHorizontal ? 0 : 8
-            anchors.verticalCenter:   bar.root.isHorizontal ? parent.verticalCenter   : undefined
-            anchors.horizontalCenter: bar.root.isHorizontal ? undefined : parent.horizontalCenter
-            text: "静"
-            color: Qt.rgba(bar.root.ink.r, bar.root.ink.g, bar.root.ink.b, 0.07)
-            font.family: bar.root.serif
-            font.pixelSize: bar.root.barHeight + 6
-            font.weight: Font.Light
-            z: 0
-        }
+        // Text {
+        //     visible: !bar.cloudMode
+        //     anchors.right:  bar.root.isHorizontal ? parent.right  : undefined
+        //     anchors.bottom: bar.root.isHorizontal ? undefined     : parent.bottom
+        //     anchors.rightMargin:  bar.root.isHorizontal ? 8 : 0
+        //     anchors.bottomMargin: bar.root.isHorizontal ? 0 : 8
+        //     anchors.verticalCenter:   bar.root.isHorizontal ? parent.verticalCenter   : undefined
+        //     anchors.horizontalCenter: bar.root.isHorizontal ? undefined : parent.horizontalCenter
+        //     text: "静"
+        //     color: Qt.rgba(bar.root.ink.r, bar.root.ink.g, bar.root.ink.b, 0.07)
+        //     font.family: bar.root.serif
+        //     font.pixelSize: bar.root.barHeight + 6
+        //     font.weight: Font.Light
+        //     z: 0
+        // }
 
         // Inner-edge hairline (facing the rest of the screen). Hidden in
         // cloud mode — the rounded backdrop replaces it visually.
@@ -143,37 +172,233 @@ PanelWindow {
             color: bar.root.sep
         }
 
-        // Centre cluster: clock only, clickable. Horizontal bars show
-        // "HH:MM" on one line; vertical bars stack HH and MM.
+        // Centre cluster: clock + omarchy indicator buttons.
+        // The clock itself is a clickable Item with its own tight MouseArea;
+        // indicators sit beside it as separate clickable buttons so calendar
+        // and indicator clicks never conflict. Vertical bars drop indicators
+        // and stack HH/MM.
         Item {
-            id: clockItem
+            id: centerGroup
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter:   parent.verticalCenter
             z: 10
-            Component.onCompleted: bar.root.calendarAnchorItem = clockItem
 
             implicitWidth:  bar.root.isHorizontal
-                            ? clockOneLine.implicitWidth + 14
+                            ? clockItem.implicitWidth + 14
                             : Math.max(clockHH.implicitWidth, clockMM.implicitWidth) + 8
             implicitHeight: bar.root.isHorizontal
-                            ? clockOneLine.implicitHeight + 8
+                            ? clockItem.implicitHeight + 8
                             : (clockHH.implicitHeight + clockMM.implicitHeight + 6)
 
             Bloom { id: clockBloom; root: bar.root }
 
-            Text {
-                id: clockOneLine
+            // Horizontal: clock centred independently; indicators anchor to its
+            // right edge so they never push the clock off-centre.
+            Item {
+                id: clockItem
                 visible: bar.root.isHorizontal
                 anchors.centerIn: parent
                 anchors.verticalCenterOffset: -1
-                text: bar.root.hh + ":" + bar.root.mm
-                color: clockMouse.containsMouse ? bar.root.seal : bar.root.ink
-                font.family: bar.root.mono
-                font.pixelSize: 12
-                font.letterSpacing: 2
-                font.weight: Font.Light
-                Behavior on color { ColorAnimation { duration: 180 } }
+                implicitWidth: bar.root.osdActive ? 250 : clockOneLine.implicitWidth
+                implicitHeight: clockOneLine.implicitHeight + 8
+                Component.onCompleted: bar.root.calendarAnchorItem = clockItem
+
+                Text {
+                    id: clockOneLine
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -1
+                    text: bar.root.hh + ":" + bar.root.mm
+                    visible: !bar.root.osdActive
+                    color: clockMouse.containsMouse ? bar.root.seal : bar.root.ink
+                    font.family: bar.root.mono
+                    font.pixelSize: 12
+                    font.letterSpacing: 2
+                    font.weight: Font.Light
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+
+                // OSD progress bar — replaces the clock briefly
+                Rectangle {
+                    id: osdBar
+                    visible: bar.root.osdActive
+                    anchors.centerIn: parent
+                    width: 250; height: 4; radius: 2
+                    color: Qt.rgba(bar.root.seal.r, bar.root.seal.g, bar.root.seal.b, 0.15)
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: parent.width * (bar.root.osdPct / 100)
+                        radius: parent.radius
+                        color: bar.root.seal
+                        Behavior on width { NumberAnimation { duration: 120 } }
+                    }
+                }
+
+                Timer {
+                    id: clockTipDelay
+                    interval: 320
+                    onTriggered: {
+                        const p = clockItem.mapToItem(null, clockItem.width / 2, clockItem.height / 2);
+                        bar.root.showTooltip("Calendar", p.x, p.y);
+                    }
+                }
+
+                MouseArea {
+                    id: clockMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onEntered: { clockBloom.fire(mouseX, mouseY); clockTipDelay.restart(); }
+                    onExited:  { clockTipDelay.stop(); bar.root.hideTooltip("Calendar"); }
+                    onClicked: (e) => {
+                        clockTipDelay.stop();
+                        bar.root.hideTooltip("Calendar");
+                        if (e.button === Qt.RightButton) {
+                            bar.root.run("rencal");
+                        } else if (bar.root.calendarVisible) {
+                            bar.root.calendarVisible = false;
+                        } else {
+                            bar.root.openCalendar();
+                        }
+                    }
+                }
             }
+
+            // Voxtype indicator button — to the right of the clock
+            Item {
+                id: voxtypeIndicator
+                anchors.left: clockItem.right
+                anchors.leftMargin: 5
+                anchors.verticalCenter: parent.verticalCenter
+                width: visible ? 16 : 0
+                height: bar.root.barHeight
+                visible: bar.root.isHorizontal && bar.root.voxtypeStatus !== "idle"
+
+                Text {
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -1
+                    text: bar.root.voxtypeStatus === "recording" ? "󰍬" : "󰔟"
+                    color: voxtypeMouse.containsMouse ? bar.root.seal : bar.root.ink
+                    font.family: bar.root.mono
+                    font.pixelSize: 9
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+                Rectangle {
+                    anchors.fill: parent; anchors.margins: 2; radius: 2
+                    color: voxtypeMouse.containsMouse ? Qt.rgba(bar.root.seal.r, bar.root.seal.g, bar.root.seal.b, 0.12) : "transparent"
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+                MouseArea {
+                    id: voxtypeMouse
+                    anchors.fill: parent; hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: (e) => {
+                        if (e.button === Qt.RightButton) bar.root.run("omarchy-voxtype-config");
+                        else bar.root.run("omarchy-voxtype-model");
+                    }
+                }
+            }
+
+            // Screen recording indicator — to the right of voxtype
+            Item {
+                id: scrIndicator
+                anchors.left: voxtypeIndicator.right
+                anchors.leftMargin: 5
+                anchors.verticalCenter: parent.verticalCenter
+                width: visible ? 16 : 0
+                height: bar.root.barHeight
+                visible: bar.root.isHorizontal && bar.root.screenRecording
+
+                Text {
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -1
+                    text: "󰻂"
+                    color: scrMouse.containsMouse ? bar.root.seal : bar.root.ink
+                    font.family: bar.root.mono
+                    font.pixelSize: 9
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+                Rectangle {
+                    anchors.fill: parent; anchors.margins: 2; radius: 2
+                    color: scrMouse.containsMouse ? Qt.rgba(bar.root.seal.r, bar.root.seal.g, bar.root.seal.b, 0.12) : "transparent"
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+                MouseArea {
+                    id: scrMouse
+                    anchors.fill: parent; hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { bar.root.run("omarchy-capture-screenrecording"); bar.root.refreshScreenRecording(); }
+                }
+            }
+
+            // Idle disabled indicator — to the right of screen recording
+            Item {
+                id: idleIndicator
+                anchors.left: scrIndicator.right
+                anchors.leftMargin: 5
+                anchors.verticalCenter: parent.verticalCenter
+                width: visible ? 16 : 0
+                height: bar.root.barHeight
+                visible: bar.root.isHorizontal && bar.root.idleDisabled
+
+                Text {
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -1
+                    text: "󱫖"
+                    color: idleMouse.containsMouse ? bar.root.seal : bar.root.ink
+                    font.family: bar.root.mono
+                    font.pixelSize: 9
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+                Rectangle {
+                    anchors.fill: parent; anchors.margins: 2; radius: 2
+                    color: idleMouse.containsMouse ? Qt.rgba(bar.root.seal.r, bar.root.seal.g, bar.root.seal.b, 0.12) : "transparent"
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+                MouseArea {
+                    id: idleMouse
+                    anchors.fill: parent; hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { bar.root.run("omarchy-toggle-idle"); bar.root.refreshIdleIndicator(); }
+                }
+            }
+
+            // Notification silencing indicator — to the right of idle disabled
+            Item {
+                id: notifIndicator
+                anchors.left: idleIndicator.right
+                anchors.leftMargin: 5
+                anchors.verticalCenter: parent.verticalCenter
+                width: visible ? 16 : 0
+                height: bar.root.barHeight
+                visible: bar.root.isHorizontal && bar.root.notificationSilencing
+
+                Text {
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -1
+                    text: "󰂛"
+                    color: notifMouse.containsMouse ? bar.root.seal : bar.root.ink
+                    font.family: bar.root.mono
+                    font.pixelSize: 9
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+                Rectangle {
+                    anchors.fill: parent; anchors.margins: 2; radius: 2
+                    color: notifMouse.containsMouse ? Qt.rgba(bar.root.seal.r, bar.root.seal.g, bar.root.seal.b, 0.12) : "transparent"
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+                MouseArea {
+                    id: notifMouse
+                    anchors.fill: parent; hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { bar.root.run("omarchy-toggle-notification-silencing"); bar.root.refreshNotificationSilencing(); }
+                }
+            }
+
+            // Vertical: stacked HH and MM (no indicators in vertical mode)
             Text {
                 id: clockHH
                 visible: !bar.root.isHorizontal
@@ -181,11 +406,10 @@ PanelWindow {
                 anchors.bottom: parent.verticalCenter
                 anchors.bottomMargin: 1
                 text: bar.root.hh
-                color: clockMouse.containsMouse ? bar.root.seal : bar.root.ink
+                color: bar.root.ink
                 font.family: bar.root.mono
                 font.pixelSize: 11
                 font.weight: Font.Light
-                Behavior on color { ColorAnimation { duration: 180 } }
             }
             Text {
                 id: clockMM
@@ -194,35 +418,10 @@ PanelWindow {
                 anchors.top: parent.verticalCenter
                 anchors.topMargin: 1
                 text: bar.root.mm
-                color: clockMouse.containsMouse ? bar.root.seal : bar.root.ink
+                color: bar.root.ink
                 font.family: bar.root.mono
                 font.pixelSize: 11
                 font.weight: Font.Light
-                Behavior on color { ColorAnimation { duration: 180 } }
-            }
-
-            Timer {
-                id: clockTipDelay
-                interval: 320
-                onTriggered: {
-                    const p = clockItem.mapToItem(null, clockItem.width / 2, clockItem.height / 2);
-                    bar.root.showTooltip("Calendar", p.x, p.y);
-                }
-            }
-
-            MouseArea {
-                id: clockMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onEntered: { clockBloom.fire(mouseX, mouseY); clockTipDelay.restart(); }
-                onExited:  { clockTipDelay.stop(); bar.root.hideTooltip("Calendar"); }
-                onClicked: {
-                    clockTipDelay.stop();
-                    bar.root.hideTooltip("Calendar");
-                    if (bar.root.calendarVisible) bar.root.calendarVisible = false;
-                    else bar.root.openCalendar();
-                }
             }
         }
 
@@ -241,7 +440,7 @@ PanelWindow {
             // in the gap to the icon cluster so the reservation below tracks a
             // single animated number — no 8px snap when the pill maps/unmaps.
             readonly property real contentW: musicRow.width + 12
-            property real openW: present ? contentW + 8 : 0
+            property real openW: present ? contentW : 0
             // One Behavior drives all three motions: slide open on track
             // start, ease between widths on a title change, slide shut on
             // stop. 220ms OutCubic — a short, settled glide.
@@ -249,12 +448,9 @@ PanelWindow {
 
             visible: present || openW > 0.5
             anchors.right: parent.right
-            anchors.rightMargin: bar.cloudMode ? bar.cloudAir + bar.cloudPad + 2 : 10
-            anchors.verticalCenter: parent.verticalCenter
-            // Match the -1 optical lift applied to icons / clock so the
-            // pill sits on the same baseline as the rest of the bar row.
-            anchors.verticalCenterOffset: -1
-            height: 16
+            anchors.rightMargin: 0
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
             width: openW
             z: 10
 
@@ -264,15 +460,11 @@ PanelWindow {
 
             Rectangle {
                 id: musicPill
-                // Pinned to the right edge so the pill grows leftward as the
-                // item widens; the 8px gap to the icon cluster sits to its
-                // left. clip masks the centred row to the animating width so
-                // the open reads as the pill inflating, not text spilling out.
                 anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(0, parent.width - 8)
-                height: parent.height
-                radius: height / 2
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: parent.width
+                radius: 0
                 color: bar.root.accent
                 clip: true
                 opacity: musicMouse.containsMouse ? 1.0 : 0.9
@@ -429,6 +621,11 @@ PanelWindow {
                 Layout.fillHeight: !bar.root.isHorizontal
             }
 
+            // Running-app tray icons sit to the left of the weather
+            // separator so they bridge workspace labels and the
+            // pop-up / status cluster.
+            SystemTray { root: bar.root }
+
             Separator { root: bar.root }
 
             // Pop-up / overlay openers sit on the inside of the right
@@ -467,28 +664,37 @@ PanelWindow {
             // bar-position chevron.
             Module {
                 root: bar.root
-                glyph: "󰍛"
-                tooltip: "CPU " + Math.round(bar.root.cpuVal) + "%"
-                color: bar.root.cpuVal > 80 ? bar.root.seal : bar.root.ink
-                onActivated: bar.root.run("omarchy-launch-or-focus-tui btop")
+                glyph: bar.root.kbdLayout
+                tooltip: "Click to switch layout"
+                fontSize: 9
+                glyphYOffset: 0
+                onActivated: bar.root.cycleKbdLayout()
             }
 
             Module {
                 root: bar.root
+                glyph: "󰍛"
+                tooltip: "CPU " + Math.round(bar.root.cpuVal) + "%  MEM " + Math.round(bar.root.memVal) + "%"
+                color: bar.root.powerProfile === "power-saver" ? bar.root.green
+                       : bar.root.powerProfile === "performance" ? bar.root.accent
+                       : (bar.root.cpuVal > 80 ? bar.root.seal : bar.root.ink)
+                onActivated: bar.root.run("omarchy-launch-or-focus-tui btop")
+            }
+
+            Module {
+                id: btMod
+                root: bar.root
                 glyph: bar.root.btIcon
-                tooltip: {
-                    if (!bar.root.btPowered) return "Bluetooth off";
-                    return bar.root.btCount > 0
-                        ? "Bluetooth · " + bar.root.btCount + " connected"
-                        : "Bluetooth on";
-                }
-                onActivated: bar.root.run("omarchy-launch-bluetooth")
+                tooltip: bar.root.btTooltip
+                color: bar.root.btPowered ? bar.root.accent : bar.root.ink
+                onActivated: bar.root.openBluetooth()
             }
 
             Module {
                 id: netMod
                 root: bar.root
                 glyph: bar.root.netIcon
+                color: bar.root.netKind === "wifi" ? bar.root.accent : bar.root.ink
                 tooltip: {
                     if (bar.root.netKind === "eth") return "Ethernet";
                     if (bar.root.netKind === "wifi") {
@@ -497,7 +703,7 @@ PanelWindow {
                     }
                     return "Offline";
                 }
-                onActivated: bar.root.run("omarchy-launch-wifi")
+                onActivated: bar.root.openWifi()
 
                 // Network-burst dot: traverses the wifi glyph's outermost
                 // arc once when a heavy rx+tx burst is detected.
@@ -546,13 +752,23 @@ PanelWindow {
             }
 
             Module {
+                id: audioMod
                 root: bar.root
                 glyph: bar.root.audioIcon
+                color: bar.root.audioVol >= 100 ? bar.root.accent : bar.root.ink
                 tooltip: bar.root.audioMuted
                          ? "Audio muted · " + bar.root.audioVol + "%"
                          : "Audio " + bar.root.audioVol + "%"
-                onActivated: bar.root.run("omarchy-launch-audio")
+                onActivated: bar.root.openAudio()
                 onRightActivated: bar.root.run("pamixer -t")
+                onWheelActivated: (delta, mx, my) => {
+                    bar.root.setVolume(bar.root.audioVol + (delta > 0 ? 2 : -2));
+                    const tip = bar.root.audioMuted
+                        ? "Audio muted · " + bar.root.audioVol + "%"
+                        : "Audio " + bar.root.audioVol + "%";
+                    const p = mapToItem(null, mx, my);
+                    bar.root.showTooltip(tip, p.x, p.y);
+                }
             }
 
             // Surfaces only when omarchy-update-available exits 0. Sits
@@ -571,6 +787,7 @@ PanelWindow {
             }
 
             Module {
+                id: batteryMod
                 root: bar.root
                 glyph: bar.root.batteryIcon()
                 // Hide power below 0.05 W: idle Full / Not charging
@@ -586,16 +803,30 @@ PanelWindow {
                     }
                     return s;
                 }
-                color: bar.root.batVal <= 10 ? bar.root.seal : bar.root.batVal <= 20 ? bar.root.indigo : bar.root.ink
-                onActivated: bar.root.run("omarchy-menu power")
+                color: (bar.root.batState === "Charging" || bar.root.batState === "Full" || bar.root.batState === "Not charging")
+                       ? bar.root.accent
+                       : (bar.root.batVal <= 10 ? bar.root.seal : bar.root.batVal <= 20 ? bar.root.indigo : bar.root.ink)
+                onActivated: bar.root.openPowerProfile()
             }
 
+            // Auto-hide toggle: pin=always visible, unpin=slides away when idle.
             Module {
                 root: bar.root
-                glyph: bar.root.edgeArrow()
-                tooltip: "Move bar"
-                onActivated: bar.root.cycleBarEdge()
+                glyph: "󰐃"
+                tooltip: bar.root.barAutoHide
+                         ? "Auto-hide on · Click to pin bar"
+                         : "Auto-hide off · Click to hide bar when idle"
+                color: bar.root.barAutoHide ? bar.root.seal : bar.root.ink
+                onActivated: bar.root.toggleBarAutoHide()
             }
+
+            // Module {
+            //     root: bar.root
+            //     glyph: bar.root.edgeArrow()
+            //     tooltip: "Move bar"
+            //     onActivated: bar.root.cycleBarEdge()
+            // }
         }
+    }
     }
 }

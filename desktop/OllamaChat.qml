@@ -119,7 +119,7 @@ Item {
             keep_alive: 0
         });
         unloadProc.command = ["curl", "-s", "--max-time", "2", "-X", "POST",
-            "http://localhost:11434/api/generate",
+            "http://dylans-mac-mini:11434/api/generate",
             "-d", body];
         unloadProc.running = false;
         unloadProc.running = true;
@@ -172,7 +172,7 @@ Item {
             think: false
         });
         chatProc.command = ["curl", "-sN",
-            "http://localhost:11434/api/generate",
+            "http://dylans-mac-mini:11434/api/generate",
             "-d", body];
         chatProc.running = false;
         chatProc.running = true;
@@ -246,8 +246,8 @@ Item {
         // that a JSON false-positive is implausible.
         command: ["sh", "-c",
             "if ! command -v ollama >/dev/null 2>&1; then echo no-ollama; exit; fi; "
-            + "if ! curl -s --max-time 1 http://localhost:11434/api/tags >/dev/null 2>&1; then echo no-daemon; exit; fi; "
-            + "if ! curl -s http://localhost:11434/api/tags | grep -Fq -- \"$1\"; then echo no-model; exit; fi; "
+            + "if ! curl -s --max-time 1 http://dylans-mac-mini:11434/api/tags >/dev/null 2>&1; then echo no-daemon; exit; fi; "
+            + "if ! curl -s http://dylans-mac-mini:11434/api/tags | grep -Fq -- \"$1\"; then echo no-model; exit; fi; "
             + "echo ok",
             "sh", ollamaChat.model_]
         stdout: StdioCollector {

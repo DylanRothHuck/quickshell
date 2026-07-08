@@ -69,6 +69,13 @@ Item {
                     ? "NO HISTORY YET"
                     : total + " RECENT" + (total === 1 ? "" : "S");
             }
+            if (o.webMode) {
+                const total = o.filteredItems.length;
+                if (o.webRunning) return "SEARCHING WEB…";
+                return total === 0
+                    ? "TYPE TO SEARCH"
+                    : total + " RESULT" + (total === 1 ? "" : "S");
+            }
             if (o.procMode) {
                 const total = o.filteredItems.length;
                 if (header.processes && header.processes.running && total === 0) return "LOADING PROCESSES…";

@@ -208,6 +208,11 @@ Item {
                     if (o.ghRunning) return "SEARCHING GITHUB…";
                     return "NO REPOS MATCH";
                 }
+                if (o.webMode) {
+                    if (o.query.length === 0) return "TYPE TO SEARCH THE WEB";
+                    if (o.webRunning) return "SEARCHING WEB…";
+                    return "NO RESULTS  ·  CTRL+G TO OPEN QUERY IN OMNI";
+                }
                 if (o.favMode)  return "NO FAVOURITES — CTRL+S TO STAR";
                 if (o.histMode) return "NO HISTORY YET";
                 if (o.procMode)  return rl.processes.running ? "LOADING…" : "NO PROCESSES";

@@ -1,7 +1,7 @@
 import QtQuick
 
 // Bluetooth detail — power toggle, scan, paired/known device list with
-// connect/disconnect. bluez-tools backed (bt-adapter / bt-device).
+// connect/disconnect. bluetoothctl backed.
 // Keyboard: arrows / Tab move through header buttons and devices,
 // Enter activates.
 Item {

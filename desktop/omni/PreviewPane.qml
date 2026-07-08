@@ -15,6 +15,7 @@ Item {
 
     required property var omni
     required property var ollamaChat
+    required property var aiChat
 
     property alias tldrFlickable: tldrPreviewScroll
     property alias chatFlickable: chatPreviewScroll
@@ -30,9 +31,11 @@ Item {
         text: {
             const o = pp.omni;
             const it = o.filteredItems[o.selectedIndex];
+            if (o.aiChatMode) return o.aiChatModelProp;
             if (o.tldrMode) return o.tldrTool;
             if (o.llmMode) return o.chatModel;
             if (o.ghMode) return o.previewRepo;
+            if (o.webMode || o.showingWebResults) return o.webPreviewTitle;
             if (o.procMode) return it ? it.title : "";
             if (o.themeMode) return it ? it.title : "";
             return o.previewPath ? Data.basename(o.previewPath) : "";
@@ -55,6 +58,15 @@ Item {
         text: {
             const o = pp.omni;
             const it = o.filteredItems[o.selectedIndex];
+            if (o.aiChatMode) {
+                if (o.aiChatPrompt.length === 0)
+                    return "type a message after selecting an AI entry";
+                if (!o.aiChatSubmitted)
+                    return "↵ to ask  ·  " + o.aiChatModelProp;
+                if (o.aiChatRunning)
+                    return "streaming  ·  edit to ask again";
+                return "↵ done  ·  edit prompt and ↵ to ask again";
+            }
             if (o.tldrMode) return o.tldrTool.length === 0
                 ? "type a command name after `tldr `"
                 : "tldr  ·  ↵ opens terminal with command ready";
@@ -77,6 +89,13 @@ Item {
                            : "↵ done  ·  edit prompt and ↵ to ask again";
             }
             if (o.ghMode) return o.previewRepoUrl;
+            if (o.webMode || o.showingWebResults) {
+                if (o.webPreviewDomain)
+                    return o.webPreviewUrl + "  ·  ↵ opens in browser";
+                if (o.query.length > 0)
+                    return "↵ opens selected  ·  Ctrl+G opens query in omni";
+                return "";
+            }
             if (o.procMode) return it ? ("pid " + (it.pid || "") + "  ·  ↵ kills (SIGTERM)") : "";
             if (o.themeMode) return it
                 ? (it.isActive ? "ACTIVE  ·  ↵ reapplies" : "↵ applies theme")
@@ -115,6 +134,11 @@ Item {
             visible: !pp.omni.previewHasContent
             text: {
                 const o = pp.omni;
+                if (o.aiChatMode) {
+                    if (o.aiChatPrompt.length === 0) return "TYPE A MESSAGE";
+                    if (!o.aiChatSubmitted) return "PRESS ENTER TO ASK";
+                    return o.aiChatRunning ? "STREAMING…" : "DONE";
+                }
                 if (o.tldrMode) {
                     if (o.tldrTool.length === 0) return "TYPE A COMMAND";
                     return o.tldrRunning ? "FETCHING…" : "NO TLDR PAGE";
@@ -129,6 +153,10 @@ Item {
                     return o.chatRunning ? "STREAMING…" : "DONE";
                 }
                 if (o.ghMode)    return "SELECT A REPO";
+                if (o.webMode || o.showingWebResults) {
+                    if (o.query.length === 0) return "TYPE TO SEARCH";
+                    return o.webRunning ? "SEARCHING…" : "SELECT A RESULT  ·  CTRL+G FOR OMNI";
+                }
                 if (o.procMode)  return "SELECT A PROCESS";
                 if (o.themeMode) return "SELECT A THEME";
                 return o.query.length === 0 ? "PREVIEW APPEARS HERE" : "SELECT A FILE";
@@ -252,7 +280,7 @@ Item {
         Flickable {
             id: chatPreviewScroll
             anchors.fill: parent
-            visible: pp.omni.llmMode && pp.omni.previewHasContent
+            visible: (pp.omni.llmMode || pp.omni.aiChatMode) && pp.omni.previewHasContent
             contentWidth: width
             contentHeight: chatPreviewEdit.implicitHeight
             clip: true
@@ -278,6 +306,21 @@ Item {
                     chatPreviewScroll.contentY = 0;
                 }
             }
+            Connections {
+                target: pp.omni
+                function onAiChatPreviewChanged() {
+                    if (pp.omni.aiChatRunning) {
+                        const max = Math.max(0, chatPreviewScroll.contentHeight - chatPreviewScroll.height);
+                        chatPreviewScroll.contentY = max;
+                    }
+                }
+            }
+            Connections {
+                target: pp.aiChat
+                function onPromptSubmitted() {
+                    chatPreviewScroll.contentY = 0;
+                }
+            }
 
             WheelHandler {
                 onWheel: (event) => {
@@ -298,7 +341,7 @@ Item {
                 visible: false
                 width: 0
                 height: 0
-                text: pp.omni.chatPreview
+                text: pp.omni.aiChatMode ? pp.omni.aiChatRaw : pp.omni.chatPreview
                 textFormat: TextEdit.PlainText
                 readOnly: true
             }
@@ -313,6 +356,8 @@ Item {
                     const o = pp.omni;
                     const pal = { ink: o.ink, inkDeep: o.inkDeep,
                                   indigo: o.indigo, seal: o.seal };
+                    if (o.aiChatMode)
+                        return o.aiChatPreview;
                     if (o.chatStatus === "no-ollama")
                         return Fmt.formatChatHtml(
                             "Ollama is not installed.\n\n"
@@ -355,6 +400,21 @@ Item {
             font.family: pp.omni.mono
             font.pixelSize: 10 * pp.omni.fontScale
             lineHeight: 1.3
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            maximumLineCount: Math.max(1, Math.floor(previewBody.height / 13))
+        }
+
+        // Web result snippet (URL + description).
+        Text {
+            anchors.fill: parent
+            visible: (pp.omni.webMode || pp.omni.showingWebResults) && pp.omni.webPreviewSnippet !== ""
+            text: pp.omni.webPreviewSnippet
+            color: pp.omni.ink
+            font.family: pp.omni.mono
+            font.pixelSize: 10 * pp.omni.fontScale
+            lineHeight: 1.4
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
             elide: Text.ElideRight

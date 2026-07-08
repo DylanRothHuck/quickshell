@@ -24,6 +24,7 @@ Item {
 
     signal activated()
     signal rightActivated()
+    signal wheelActivated(int delta, real mouseX, real mouseY)
 
     readonly property int pad: 5
 
@@ -133,5 +134,6 @@ Item {
             if (e.button === Qt.RightButton) cell.rightActivated();
             else cell.activated();
         }
+        onWheel: (wheel) => cell.wheelActivated(wheel.angleDelta.y, wheel.x, wheel.y)
     }
 }
