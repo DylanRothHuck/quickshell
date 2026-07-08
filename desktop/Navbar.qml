@@ -1389,7 +1389,7 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 const have = this.text.trim().split(",").map(s => parseInt(s)).filter(n => !isNaN(n));
-                root.existingWs = [...new Set([...have, 1, 2, 3, 4, 5])].sort((a,b) => a-b).slice(0, 9);
+                root.existingWs = [...new Set([...have, 1, 2, 3, 4, 5])].sort((a,b) => a-b).slice(0, 8);
             }
         }
     }
