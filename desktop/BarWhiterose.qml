@@ -205,7 +205,7 @@ PanelWindow {
             Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 14; Layout.alignment: Qt.AlignVCenter; color: wr.line }
 
             Repeater {
-                model: 8
+                model: 5
                 delegate: Item {
                     id: wsDot
                     required property int index
@@ -439,7 +439,7 @@ PanelWindow {
         Rectangle { Layout.preferredWidth: 14; Layout.preferredHeight: 1; Layout.alignment: Qt.AlignHCenter; color: wr.line }
 
         Repeater {
-            model: 8
+            model: 5
             delegate: Item {
                 id: wsDotV
                 required property int index

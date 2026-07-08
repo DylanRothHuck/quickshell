@@ -302,7 +302,7 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 3
                 Repeater {
-                    model: 8
+                    model: 5
                     delegate: Item {
                         required property int index
                         readonly property int wsId: index + 1
@@ -583,7 +583,7 @@ PanelWindow {
 
         // present/active workspace numbers, stacked
         Repeater {
-            model: 8
+            model: 5
             delegate: Text {
                 required property int index
                 readonly property int wsId: index + 1

@@ -977,9 +977,8 @@ Item {
     }
 
     function refreshSystemStats() {
-        if (systemProbe.running) return;
-        systemProbe.running = false;
-        systemProbe.running = true;
+        combined2sProbe.running = false;
+        combined2sProbe.running = true;
     }
 
     function runSunset(verb) {
@@ -1303,9 +1302,9 @@ Item {
     }
     Timer { id: kbdRefreshTimer; interval: 300; onTriggered: { kbdProbe.running = false; kbdProbe.running = true; } }
 
-    // ---------- System stats (on demand) ----------
+    // ---------- Combined stats (2 Hz) ----------
     Process {
-        id: systemProbe
+        id: combined2sProbe
         running: false
         command: ["bash", "-lc",
             "read _ a b c d _ < <(grep '^cpu ' /proc/stat); "
@@ -1314,20 +1313,30 @@ Item {
             + "du=$(( (e+f+g) - (a+b+c) )); dt=$(( (e+f+g+h) - (a+b+c+d) )); "
             + "cpu=$(( dt>0 ? du*100/dt : 0 )); "
             + "mem=$(awk '/MemTotal/{t=$2}/MemAvailable/{m=$2}END{printf \"%d\",(t-m)*100/t}' /proc/meminfo); "
-            + "printf '%d|%d' \"$cpu\" \"$mem\""]
+            + "v=$(pamixer --get-volume 2>/dev/null || echo 0); "
+            + "m=$(pamixer --get-mute 2>/dev/null || echo false); "
+            + "pgrep -f '^gpu-screen-recorder' >/dev/null && sr=1 || sr=0; "
+            + "pgrep -x hypridle >/dev/null && idle=0 || idle=1; "
+            + "makoctl mode 2>/dev/null | grep -q 'do-not-disturb' && dnd=1 || dnd=0; "
+            + "printf '%d|%d|%s|%s|%s|%s|%s' \"$cpu\" \"$mem\" \"$v\" \"$m\" \"$sr\" \"$idle\" \"$dnd\""]
         stdout: StdioCollector {
             onStreamFinished: {
                 const p = this.text.split("|");
-                if (p.length === 2) {
-                    root.cpuVal = parseInt(p[0]) || 0;
-                    root.memVal = parseInt(p[1]) || 0;
-                }
+                if (p.length < 7) return;
+                root.cpuVal = parseInt(p[0]) || 0;
+                root.memVal = parseInt(p[1]) || 0;
+                const v = parseInt(p[2]); root.audioVol = isNaN(v) ? 0 : v;
+                root.audioMuted = p[3].trim() === "true";
+                root.updateAudioIcon();
+                root.screenRecording = p[4] === "1";
+                root.idleDisabled = p[5] === "1";
+                root.notificationSilencing = p[6] === "1";
             }
         }
     }
 
     Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: { systemProbe.running = false; systemProbe.running = true; } }
+        onTriggered: { combined2sProbe.running = false; combined2sProbe.running = true; } }
 
     // ---------- Telemetry (1 Hz) ----------
     Process {
@@ -1389,7 +1398,7 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 const have = this.text.trim().split(",").map(s => parseInt(s)).filter(n => !isNaN(n));
-                root.existingWs = [...new Set([...have, 1, 2, 3, 4, 5])].sort((a,b) => a-b).slice(0, 8);
+                root.existingWs = [...new Set([...have, 1, 2, 3, 4, 5])].sort((a,b) => a-b).slice(0, 5);
             }
         }
     }
@@ -1530,29 +1539,7 @@ Item {
     Timer { interval: 5000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: { btProbe.running = false; btProbe.running = true; } }
 
-    // ---------- Audio status ----------
-    // Icon ramps with volume: muted → icoMute, 0 → off, <50 → low, ≥50 → high.
-    Process {
-        id: audioProbe
-        running: false
-        command: ["bash", "-lc",
-            "v=$(pamixer --get-volume 2>/dev/null || echo 0); "
-            + "m=$(pamixer --get-mute 2>/dev/null || echo false); "
-            + "printf '%s|%s' \"$v\" \"$m\""]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const p = this.text.split("|");
-                if (p.length !== 2) return;
-                const v = parseInt(p[0]);
-                const m = p[1].trim() === "true";
-                root.audioVol = isNaN(v) ? 0 : v;
-                root.audioMuted = m;
-                root.updateAudioIcon();
-            }
-        }
-    }
-    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: { audioProbe.running = false; audioProbe.running = true; } }
+
 
     // ---------- Keyboard layout ----------
     Process {
@@ -1576,62 +1563,23 @@ Item {
     // ---------- Screen recording indicator ----------
     property bool screenRecording: false
     function refreshScreenRecording() {
-        screenRecordingProbe.running = false;
-        screenRecordingProbe.running = true;
+        combined2sProbe.running = false;
+        combined2sProbe.running = true;
     }
-    Process {
-        id: screenRecordingProbe
-        running: false
-        command: ["bash", "-lc",
-            "if pgrep -f '^gpu-screen-recorder' >/dev/null; then echo '1'; else echo '0'; fi"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.screenRecording = this.text.trim() === "1";
-            }
-        }
-    }
-    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: root.refreshScreenRecording() }
 
     // ---------- Idle indicator ----------
     property bool idleDisabled: false
     function refreshIdleIndicator() {
-        idleProbe.running = false;
-        idleProbe.running = true;
+        combined2sProbe.running = false;
+        combined2sProbe.running = true;
     }
-    Process {
-        id: idleProbe
-        running: false
-        command: ["bash", "-lc",
-            "if pgrep -x hypridle >/dev/null; then echo '0'; else echo '1'; fi"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.idleDisabled = this.text.trim() === "1";
-            }
-        }
-    }
-    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: root.refreshIdleIndicator() }
 
     // ---------- Notification silencing indicator ----------
     property bool notificationSilencing: false
     function refreshNotificationSilencing() {
-        notificationSilencingProbe.running = false;
-        notificationSilencingProbe.running = true;
+        combined2sProbe.running = false;
+        combined2sProbe.running = true;
     }
-    Process {
-        id: notificationSilencingProbe
-        running: false
-        command: ["bash", "-lc",
-            "if makoctl mode 2>/dev/null | grep -q 'do-not-disturb'; then echo '1'; else echo '0'; fi"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.notificationSilencing = this.text.trim() === "1";
-            }
-        }
-    }
-    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: root.refreshNotificationSilencing() }
 
     // ---------- Voxtype indicator ----------
     property string voxtypeStatus: "idle"
@@ -1654,7 +1602,7 @@ Item {
             }
         }
     }
-    Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true
+    Timer { interval: 5000; running: true; repeat: true; triggeredOnStart: true
         onTriggered: root.refreshVoxtype() }
 
     // ---------- Bluetooth device probe ----------
