@@ -2208,27 +2208,28 @@ Item {
     }
 
     // ---------- Surfaces ----------
-    // All bar faces are instantiated; only the one matching barVariant maps
-    // to the edge (the other is an unmapped, zero-exclusive-zone window).
+    // Popups are loaded on demand via Loader and destroyed when closed;
+    // state lives on Navbar root so it survives the component teardown.
+    // TooltipOverlay stays always active (lightweight, frequent use).
     Bar              { root: root; visible: root.barVariant === "zen" }
     BarHacker        { root: root; visible: root.barVariant === "hackerman" }
     BarWhiterose     { root: root; visible: root.barVariant === "whiterose" }
     TooltipOverlay   { root: root }
-    SystemPopup      { root: root }
-    CalendarPopup        { root: root }
-    ScreenshotsPopup     { root: root }
-    VideosPopup          { root: root }
-    AetherPopup          { root: root }
-    DisplayPopup         { root: root }
-    WeatherPopup         { root: root }
-    PowerProfilePopup    { root: root }
-    WifiPopup            { root: root }
-    WifiSharePopup       { root: root }
-    BluetoothPopup       { root: root }
-    AudioPopup           { root: root }
-    PowerPopup           { root: root }
-    ThemePopup           { root: root }
-    WallpaperPopup       { root: root }
+    Loader { active: root.systemVisible;       sourceComponent: SystemPopup      { root: root } }
+    Loader { active: root.calendarVisible;     sourceComponent: CalendarPopup    { root: root } }
+    Loader { active: root.screenshotsVisible;  sourceComponent: ScreenshotsPopup { root: root } }
+    Loader { active: root.videosVisible;       sourceComponent: VideosPopup      { root: root } }
+    Loader { active: root.aetherVisible;       sourceComponent: AetherPopup      { root: root } }
+    Loader { active: root.displayVisible;      sourceComponent: DisplayPopup     { root: root } }
+    Loader { active: root.weatherVisible;      sourceComponent: WeatherPopup     { root: root } }
+    Loader { active: root.powerProfileVisible; sourceComponent: PowerProfilePopup { root: root } }
+    Loader { active: root.wifiVisible;         sourceComponent: WifiPopup        { root: root } }
+    Loader { active: root.shareVisible;        sourceComponent: WifiSharePopup   { root: root } }
+    Loader { active: root.btVisible;           sourceComponent: BluetoothPopup   { root: root } }
+    Loader { active: root.audioVisible;        sourceComponent: AudioPopup       { root: root } }
+    Loader { active: root.powerVisible;        sourceComponent: PowerPopup       { root: root } }
+    Loader { active: root.themeVisible;        sourceComponent: ThemePopup       { root: root } }
+    Loader { active: root.wallpaperVisible;    sourceComponent: WallpaperPopup   { root: root } }
 
     // ---------- IPC ----------
     // Lets external keybinds drive the screenshots popup. Wire up in
