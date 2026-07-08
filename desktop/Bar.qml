@@ -49,6 +49,11 @@ PanelWindow {
         bar.root.audioAnchorItem = audioMod;
     }
 
+    function handleNetBurst() {
+        arc.t = 0;
+        arcAnim.restart();
+    }
+
     // Content wrapper — PanelWindow doesn't support transform, so clip
     // ensures children don't spill when the window is 1px auto-hide tall.
     Item {
@@ -744,10 +749,7 @@ PanelWindow {
                         }
                     }
 
-                    Connections {
-                        target: bar.root
-                        function onNetBurst() { arc.t = 0; arcAnim.restart(); }
-                    }
+                    // connected via Navbar.qml Loader onLoaded → root.netBurst.connect(item.handleNetBurst)
                 }
             }
 

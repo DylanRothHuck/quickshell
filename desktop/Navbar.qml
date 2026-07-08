@@ -173,7 +173,7 @@ Item {
     PanelWindow {
         id: barRevealStrip
         anchors { top: true; left: true; right: true }
-        height: 4
+        implicitHeight: 4
         color: "transparent"
         visible: root.barAutoHide
         WlrLayershell.layer: WlrLayer.Overlay
@@ -2161,7 +2161,10 @@ Item {
         source: root.barVariant === "zen" ? "Bar.qml"
               : root.barVariant === "hackerman" ? "BarHacker.qml"
               : "BarWhiterose.qml"
-        onLoaded: item.root = root
+        onLoaded: {
+            item.root = root;
+            if (item.handleNetBurst) root.netBurst.connect(item.handleNetBurst);
+        }
     }
     TooltipOverlay   { root: root }
     Loader { active: root.systemVisible;        source: "SystemPopup.qml";        onLoaded: item.root = root }
@@ -2304,6 +2307,12 @@ Item {
         }
         function open(): void  { root.openAudio(); }
         function close(): void { root.audioVisible = false; }
+        function mute(): void {
+            root.toggleMute();
+            root.osdPct = root.audioMuted ? 0 : root.audioVol;
+            root.osdActive = true;
+            osdTimer.restart();
+        }
     }
 
     // Bar face switch. Toggle from a keybind, or jump straight to one:
@@ -2332,18 +2341,6 @@ Item {
         }
         function volume(delta: int): void {
             root.setVolume(root.audioVol + delta);
-        }
-    }
-
-    // Mute toggle — shows OSD briefly (progress bar goes to 0 / jumps back)
-    // bindeld = ,XF86AudioMute, Mute, exec, qs -c desktop ipc call audio mute
-    IpcHandler {
-        target: "audio"
-        function mute(): void {
-            root.toggleMute();
-            root.osdPct = root.audioMuted ? 0 : root.audioVol;
-            root.osdActive = true;
-            osdTimer.restart();
         }
     }
 
