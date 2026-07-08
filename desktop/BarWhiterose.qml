@@ -9,7 +9,7 @@ import Quickshell.Wayland
 PanelWindow {
     id: wr
 
-    required property var root
+    property var root: ({})
 
     readonly property color bg: root.bg
     readonly property color text: root.ink

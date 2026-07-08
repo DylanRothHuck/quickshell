@@ -2156,11 +2156,13 @@ Item {
     }
 
     // ---------- Surfaces ----------
-    // All bar faces are instantiated; only the one matching barVariant maps
-    // to the edge (the other is an unmapped, zero-exclusive-zone window).
-    Bar              { root: root; visible: root.barVariant === "zen" }
-    BarHacker        { root: root; visible: root.barVariant === "hackerman" }
-    BarWhiterose     { root: root; visible: root.barVariant === "whiterose" }
+    // Single Loader creates the active bar face; destroyed on variant switch.
+    Loader {
+        source: root.barVariant === "zen" ? "Bar.qml"
+              : root.barVariant === "hackerman" ? "BarHacker.qml"
+              : "BarWhiterose.qml"
+        onLoaded: item.root = root
+    }
     TooltipOverlay   { root: root }
     Loader { active: root.systemVisible;        source: "SystemPopup.qml";        onLoaded: item.root = root }
     Loader { active: root.calendarVisible;      source: "CalendarPopup.qml";      onLoaded: item.root = root }

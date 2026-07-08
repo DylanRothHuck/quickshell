@@ -5,7 +5,7 @@ import Quickshell.Wayland
 
 PanelWindow {
     id: bar
-    required property var root
+    property var root: ({})
 
     color: "transparent"
     // Anchors track barEdge — three sides anchored, the side opposite

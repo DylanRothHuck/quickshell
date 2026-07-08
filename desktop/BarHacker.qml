@@ -15,7 +15,7 @@ import Quickshell.Io
 // a slab, so cloud/round modes don't apply here.
 PanelWindow {
     id: hk
-    required property var root
+    property var root: ({})
 
     color: "transparent"
     anchors {
