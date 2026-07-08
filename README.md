@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/a5bf641b-ccff-41bd-a14c-619ed5c3321a
 
 ## Changes from original
 
-This fork ([bjarneo/quickshell](https://github.com/bjarneo/quickshell)) adds:
+This fork from ([bjarneo/quickshell](https://github.com/bjarneo/quickshell)) adds:
 
 - **Lazy-loading architecture** — bar faces (zen, hackerman, whiterose), popups (system, audio, weather, etc.), and the OmniMenu palette are created on-demand via `Loader` and kept alive, dramatically cutting initial memory.
 - **Consolidated probes** — six per-second telemetry probes merged into one combined probe, halving idle wake-ups.
