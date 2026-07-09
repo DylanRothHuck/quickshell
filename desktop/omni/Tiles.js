@@ -14,6 +14,8 @@ var base = [
       action: "omarchy-launch-wifi" },
     { key: "bluetooth",   keywords: "bluetooth bt pair device headset speaker keyboard",
       action: "omarchy-launch-bluetooth" },
+    { key: "tailscale",   keywords: "tailscale vpn mesh peer tunnel network device",
+      action: "qs -c desktop ipc call tailscale toggle" },
     { key: "weather",     keywords: "weather forecast temperature wttr rain sun wind",
       action: "qs -c desktop ipc call weather toggle",
       longAction: "qs -c desktop ipc call weather refresh" },
@@ -80,6 +82,14 @@ function buildDyn(n) {
             sub: !n.btPowered ? "OFF"
                               : (n.btCount > 0 ? n.btCount + " CONN" : "ON"),
             tone: !n.btPowered ? n.inkDeep : n.ink
+        },
+        tailscale: {
+            glyph: "\uF0E8",
+            label: "TAILSCALE",
+            sub: n.tailscaleOnline
+                 ? (n.tailscaleOnlineCount + "/" + n.tailscalePeerCount + " ONLINE")
+                 : "OFF",
+            tone: n.tailscaleOnline ? n.accent : n.inkDeep
         },
         weather: {
             glyph: n.weatherUnavailable ? "?"

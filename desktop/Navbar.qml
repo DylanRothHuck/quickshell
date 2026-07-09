@@ -245,6 +245,7 @@ Item {
     property Item wifiAnchorItem:          null
     property Item btAnchorItem:            null
     property Item audioAnchorItem:         null
+    property Item tailscaleAnchorItem:      null
 
     function anchorPopupTo(item) {
         const p = item.mapToItem(null, item.width / 2, item.height / 2);
@@ -287,6 +288,33 @@ Item {
     property bool   wifiRadioOn: true
     property bool   wifiScanning: false
     property string _wifiNetworksSer: ""
+
+    // ---------- Tailscale state ----------
+    property bool   tailscaleOnline: false
+    property string tailscaleIp: ""
+    property int    tailscaleOnlineCount: 0
+    property int    tailscalePeerCount: 0
+    property var    tailscalePeers: []
+    property string _tailscaleSer: ""
+
+    function refreshTailscale() {
+        if (tailscaleProbe.running) return;
+        tailscaleProbe.running = false;
+        tailscaleProbe.running = true;
+    }
+    function toggleTailscale() {
+        root.run(root.tailscaleOnline ? "tailscale down" : "tailscale up --accept-routes");
+        tailscalePostTimer.restart();
+    }
+    function copyToClipboard(text) {
+        root.run("wl-copy " + JSON.stringify(text));
+    }
+    Timer {
+        id: tailscalePostTimer
+        interval: 1500
+        repeat: false
+        onTriggered: root.refreshTailscale()
+    }
 
     // iwd-based: omarchy uses iwctl, not nmcli. The probe detects the
     // first station-mode device dynamically so multi-radio laptops work.
@@ -958,6 +986,14 @@ Item {
         if (root.wifiAnchorItem) root.anchorPopupTo(root.wifiAnchorItem);
         root.refreshWifi();
         root.wifiVisible = true;
+    }
+
+    // ---------- Tailscale popup state ----------
+    property bool tailscaleVisible: false
+    function openTailscale() {
+        if (root.tailscaleAnchorItem) root.anchorPopupTo(root.tailscaleAnchorItem);
+        root.refreshTailscale();
+        root.tailscaleVisible = true;
     }
 
     // ---------- Bluetooth popup state ----------
@@ -1745,6 +1781,42 @@ Item {
         onTriggered: { hotspotProbe.running = false; hotspotProbe.running = true; }
     }
 
+    // ---------- Tailscale status probe ----------
+    // Reads tailscale status --json and parses into tailscaleOnline,
+    // tailscaleIp, tailscalePeers (name, ip, os, online). Refreshed on
+    // popup open and after toggle actions.
+    Process {
+        id: tailscaleProbe
+        running: false
+        command: ["bash", "-lc",
+            "tailscale status --json 2>/dev/null | jq -c '"
+            + "{"
+            + "  online: .Self.Online,"
+            + "  selfIp: .Self.TailscaleIPs[0],"
+            + "  peers: [.Peer[] | {name: (.DNSName | rtrimstr(\".\") | split(\".\")[0]), ip: .TailscaleIPs[0], os: .OS, online: .Online}],"
+            + "  onlineCount: ([.Peer[] | select(.Online == true)] | length),"
+            + "  totalPeers: ([.Peer[]] | length)"
+            + "}'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const t = this.text.trim();
+                if (t.length === 0) return;
+                try {
+                    const d = JSON.parse(t);
+                    root.tailscaleOnline = d.online === true;
+                    root.tailscaleIp = d.selfIp || "";
+                    const ser = JSON.stringify(d.peers || []);
+                    if (ser !== root._tailscaleSer) {
+                        root._tailscaleSer = ser;
+                        root.tailscalePeers = d.peers || [];
+                    }
+                    root.tailscaleOnlineCount = d.onlineCount || 0;
+                    root.tailscalePeerCount = d.totalPeers || 0;
+                } catch (_) {}
+            }
+        }
+    }
+
     // ---------- WiFi share QR ----------
     // Runs omarchy-wifi-share <ssid> to generate a QR code for the
     // currently-connected network. On success it displays the QR popup.
@@ -2178,6 +2250,7 @@ Item {
     Loader { active: root.wifiVisible;          source: "WifiPopup.qml";          onLoaded: item.root = root }
     Loader { active: root.shareVisible;         source: "WifiSharePopup.qml";     onLoaded: item.root = root }
     Loader { active: root.btVisible;            source: "BluetoothPopup.qml";     onLoaded: item.root = root }
+    Loader { active: root.tailscaleVisible;     source: "TailscalePopup.qml";     onLoaded: item.root = root }
     Loader { active: root.audioVisible;         source: "AudioPopup.qml";         onLoaded: item.root = root }
     Loader { active: root.powerVisible;         source: "PowerPopup.qml";         onLoaded: item.root = root }
     Loader { active: root.themeVisible;         source: "ThemePopup.qml";         onLoaded: item.root = root }
@@ -2239,6 +2312,17 @@ Item {
         }
         function open(): void  { root.openBluetooth(); }
         function close(): void { root.btVisible = false; }
+    }
+
+    // bind = SUPER, T, exec, qs -c desktop ipc call tailscale toggle
+    IpcHandler {
+        target: "tailscale"
+        function toggle(): void {
+            if (root.tailscaleVisible) root.tailscaleVisible = false;
+            else root.openTailscale();
+        }
+        function open(): void  { root.openTailscale(); }
+        function close(): void { root.tailscaleVisible = false; }
     }
 
     // bind = SUPER, W, exec, qs ipc call weather toggle

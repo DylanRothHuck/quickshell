@@ -46,6 +46,7 @@ PanelWindow {
         bar.root.powerProfileAnchorItem = batteryMod;
         bar.root.wifiAnchorItem = netMod;
         bar.root.btAnchorItem = btMod;
+        bar.root.tailscaleAnchorItem = tsMod;
         bar.root.audioAnchorItem = audioMod;
     }
 
@@ -751,6 +752,17 @@ PanelWindow {
 
                     // connected via Navbar.qml Loader onLoaded → root.netBurst.connect(item.handleNetBurst)
                 }
+            }
+
+            Module {
+                id: tsMod
+                root: bar.root
+                glyph: "\uF0E8"
+                color: bar.root.tailscaleOnline ? bar.root.accent : bar.root.ink
+                tooltip: bar.root.tailscaleOnline
+                         ? "Tailscale \u00b7 " + bar.root.tailscaleOnlineCount + "/" + bar.root.tailscalePeerCount + " online"
+                         : "Tailscale off"
+                onActivated: bar.root.openTailscale()
             }
 
             Module {

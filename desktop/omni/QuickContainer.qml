@@ -197,6 +197,7 @@ Item {
         Component { id: audioBodyComp;       QuickAudioBody       { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
         Component { id: wifiBodyComp;        QuickWifiBody        { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
         Component { id: btBodyComp;          QuickBluetoothBody   { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
+        Component { id: tailscaleBodyComp;   QuickTailscaleBody   { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
         Component { id: weatherBodyComp;     QuickWeatherBody     { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
         Component { id: displayBodyComp;     QuickDisplayBody     { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
         Component { id: aetherBodyComp;      QuickAetherBody      { root: detailPanel.omni; nav: detailPanel.omni.navbar } }
@@ -299,6 +300,7 @@ Item {
                         case "audio":       return audioBodyComp;
                         case "network":     return wifiBodyComp;
                         case "bluetooth":   return btBodyComp;
+                        case "tailscale":   return tailscaleBodyComp;
                         case "weather":     return weatherBodyComp;
                         case "display":     return displayBodyComp;
                         case "aether":      return aetherBodyComp;
