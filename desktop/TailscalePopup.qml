@@ -62,7 +62,7 @@ CardWindow {
     readonly property var _displayItems: {
         const items = _visiblePeers.slice();
         if (root.tailscaleOnline && root.tailscaleIp.length > 0) {
-            items.push({ name: root.tailscaleHostname + "  \u2022  SELF", ip: root.tailscaleIp, os: "self", online: true });
+            items.push({ name: root.tailscaleHostname, ip: root.tailscaleIp, os: "self", online: true });
         }
         return items;
     }
