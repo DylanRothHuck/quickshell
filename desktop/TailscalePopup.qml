@@ -60,7 +60,8 @@ CardWindow {
     property int kbdIndex: 0
     readonly property int _headerCount: 1
     readonly property var _visiblePeers: root.tailscalePeers
-    readonly property int _kbdMax: _headerCount + _visiblePeers.length
+    readonly property int _selfIdx: _headerCount + _visiblePeers.length
+    readonly property int _kbdMax: _selfIdx + 1
 
     // Tracks which peer row just copied its IP so we can flash "COPIED".
     property int copiedIndex: -1
@@ -73,6 +74,14 @@ CardWindow {
     function _activateAt(i) {
         tsPopup.kbdIndex = i;
         if (i === 0) { root.toggleTailscale(); return; }
+        if (i >= _visiblePeers.length + _headerCount) {
+            if (root.tailscaleIp) {
+                root.copyToClipboard(root.tailscaleIp);
+                tsPopup.copiedIndex = i;
+                copiedTimer.restart();
+            }
+            return;
+        }
         const peer = tsPopup._visiblePeers[i - tsPopup._headerCount];
         if (!peer) return;
         root.copyToClipboard(peer.ip);
@@ -82,7 +91,9 @@ CardWindow {
 
     footer: root.tailscaleOnline && root.tailscalePeers.length > 0
             ? "\u2191\u2193 CYCLE  \u00b7  \u23CE COPY IP  \u00b7  ESC CLOSE"
-            : ""
+            : root.tailscaleOnline
+              ? "\u23CE COPY IP  \u00b7  ESC CLOSE"
+              : ""
 
     Column {
         width: parent.width
@@ -247,24 +258,69 @@ CardWindow {
         }
 
         Rectangle {
-            readonly property int localIndex: tsPopup._headerCount + tsPopup._visiblePeers.length
+            readonly property int localIndex: tsPopup._selfIdx
+            readonly property bool isFocused: tsPopup.kbdIndex === localIndex
+            visible: root.tailscaleOnline && root.tailscaleIp.length > 0
             width: parent.width
             height: 38
             radius: root.cornerRadius
-            color: "transparent"
+            color: isFocused
+                   ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20)
+                   : (selfMouse.containsMouse
+                      ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                      : "transparent")
+            border.color: isFocused ? root.seal : "transparent"
+            border.width: isFocused ? 1.5 : 0
+            Behavior on color { ColorAnimation { duration: 120 } }
+            Behavior on border.color { ColorAnimation { duration: 120 } }
 
             Text {
+                id: selfLabel
                 anchors.left: parent.left
                 anchors.leftMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.tailscaleOnline
-                      ? "\uF0C1  " + root.tailscaleIp
-                      : ""
-                color: root.inkDeep
+                text: "\uF0C1"
+                color: root.accent
                 font.family: root.mono
-                font.pixelSize: 10
-                font.letterSpacing: 1
-                visible: text.length > 0
+                font.pixelSize: 11
+            }
+            Item {
+                anchors.left: selfLabel.right
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                height: 16
+
+                Text {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.tailscaleIp
+                    color: root.inkDeep
+                    font.family: root.mono
+                    font.pixelSize: 10
+                    font.letterSpacing: 1
+                    opacity: tsPopup.copiedIndex === localIndex ? 0 : 1
+                    Behavior on opacity { NumberAnimation { duration: 100 } }
+                }
+                Text {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "\u2713  COPIED"
+                    color: root.green
+                    font.family: root.mono
+                    font.pixelSize: 10
+                    font.letterSpacing: 1
+                    font.weight: Font.Medium
+                    opacity: tsPopup.copiedIndex === localIndex ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 100 } }
+                }
+            }
+            MouseArea {
+                id: selfMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: tsPopup._activateAt(localIndex)
             }
         }
     }
