@@ -88,7 +88,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 1
             Repeater {
-                model: 5
+                model: 10
                 delegate: Rectangle {
                     required property int index
                     width: 3

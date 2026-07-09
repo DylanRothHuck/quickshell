@@ -610,7 +610,7 @@ PanelWindow {
             Separator { root: bar.root }
 
             Repeater {
-                model: 5
+                model: 10
                 delegate: Workspace {
                     required property int index
                     root: bar.root
