@@ -16,10 +16,13 @@ This fork from ([bjarneo/quickshell](https://github.com/bjarneo/quickshell)) add
 
 - **Lazy-loading architecture** — bar faces (zen, hackerman, whiterose), popups (system, audio, weather, etc.), and the OmniMenu palette are created on-demand via `Loader` and kept alive, dramatically cutting initial memory.
 - **Consolidated probes** — six per-second telemetry probes merged into one combined probe, halving idle wake-ups.
-- **Workspace optimization** — workspace indicators reduced from 10 to 8, matching omarchy's workspace count.
+- **Workspace optimization** — workspace indicators reduced from 10 to 8 (later restored to 10); only workspaces with open windows are highlighted.
 - **Required-property cleanup** — child components no longer use `required` for `root`/`theme`, making them independently loadable.
 - **Duplicate IpcHandler fix** — merged two `target: "audio"` IPC handlers into one, silencing the duplicate warning.
 - **Wi-Fi, Bluetooth, power profiles, and sound cards** — added popups for network, audio device selection, and power-profile switching.
+- **Audio device picker** — multi-port sinks (Speakers/Headphones) expand into separate selectable entries; auto-repairs when a port becomes unavailable (e.g. unplugged headphones) by switching to the first available port and restoring ALSA mixer controls.
+- **Tailscale** — self IP displayed as a regular peer row with hostname; icon state probed on startup so it's live from launch.
+- **Calendar** — integrated with local caldir (rencal) — shows event dots on days with events and lists them in the detail pane. Requires `omarchy-calendar-events` (see [`desktop/README.md`](./desktop/README.md#calendar-data)).
 - **Themes and wallpaper changer** — browse and apply omarchy themes and wallpapers directly from the palette.
 - **Redesigned top bar** — changed the bar style, removed sidebar options, made the music player module square.
 - **Added indicators** — lock screen, notification, and voxytype indicators added to the bar (they weren't working before).
@@ -27,7 +30,7 @@ This fork from ([bjarneo/quickshell](https://github.com/bjarneo/quickshell)) add
 
 | Module | What it does |
 | --- | --- |
-| [`desktop/`](./desktop) | Top bar plus omni-menu command palette in a single Quickshell process. Kanagawa Dragon layout on the live omarchy palette, kanji workspace markers, click-through popups for calendar / screenshots / display / weather / aether blueprints, and a fused command palette over installed apps and the omarchy-menu (synonyms — "wallpaper" finds Background, "reboot" finds Restart). |
+| [`desktop/`](./desktop) | Top bar plus omni-menu command palette in a single Quickshell process. Kanagawa Dragon layout on the live omarchy palette, kanji workspace markers (10 slots, only highlight workspaces with windows), click-through popups for calendar (with caldir event dots) / screenshots / display / weather / aether blueprints / audio (multi-port device picker with auto-repair) / Tailscale (self IP as peer row), and a fused command palette over installed apps and the omarchy-menu (synonyms — "wallpaper" finds Background, "reboot" finds Restart). |
 | [`song-drop/`](./song-drop) | MPRIS notifier. Drops a liquid blob from the bar on track change, morphs into a song-title pill, holds, then retreats. |
 | [`song-slide/`](./song-slide) | MPRIS notifier, snappier sibling of song-drop. Slides a sharp-cornered card in from the right with title, artist, an accent stripe, and a flush bottom-edge progress bar. Cross-fades content on rapid track changes instead of restarting the slide. |
 | [`theme-wash/`](./theme-wash) | Theme-swap flourish. On `omarchy theme set <name>`, washes the new accent across the bar from an alternating corner like ink spilling in water, with the old accent pulsing out from the centre and the new theme's name popping briefly mid-wash. |
@@ -113,7 +116,7 @@ For per-module setup (autostart hooks, theme reactivity details, customization k
 - hyprland
 - omarchy (for the live theme palette and the `omarchy toggle waybar` flow)
 
-desktop also wants `pamixer`, `bluetoothctl`, and `nmcli` for telemetry tiles, plus `brightnessctl` and `hyprsunset` for the display popup and `jq` + `curl` for the weather popup. song-drop only needs an MPRIS-capable player (mpv, spotify, etc.). music-wallpaper needs [`cliamp`](https://github.com/bjarneo/cliamp) on `PATH` for its `visstream` NDJSON feed. clipboard-ripple needs `wl-clipboard` (for `wl-paste`) and `python3` for the cursor/monitor query.
+desktop also wants `pamixer`, `bluetoothctl`, and `nmcli` for telemetry tiles, plus `brightnessctl` and `hyprsunset` for the display popup and `jq` + `curl` for the weather popup. The calendar tile needs `omarchy-calendar-events` on `PATH` (returns JSON events for a given year-month — see [`desktop/README.md`](./desktop/README.md#calendar-data)). song-drop only needs an MPRIS-capable player (mpv, spotify, etc.). music-wallpaper needs [`cliamp`](https://github.com/bjarneo/cliamp) on `PATH` for its `visstream` NDJSON feed. clipboard-ripple needs `wl-clipboard` (for `wl-paste`) and `python3` for the cursor/monitor query.
 
 ## License
 
