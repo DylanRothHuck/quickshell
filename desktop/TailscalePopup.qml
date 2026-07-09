@@ -45,15 +45,7 @@ CardWindow {
             tsPopup.kbdIndex = Math.min(n - 1, tsPopup.kbdIndex + 1);
             event.accepted = true;
         } else if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space) {
-            if (tsPopup.kbdIndex === tsPopup._selfIdx) {
-                if (root.tailscaleIp) {
-                    root.copyToClipboard(root.tailscaleIp);
-                    selfRow._selfFlash = true;
-                    selfFlashTimer.restart();
-                }
-            } else {
-                tsPopup._activateAt(tsPopup.kbdIndex);
-            }
+            tsPopup._activateAt(tsPopup.kbdIndex);
             event.accepted = true;
         }
     }
@@ -66,10 +58,15 @@ CardWindow {
     }
 
     property int kbdIndex: 0
-    readonly property int _headerCount: 1
     readonly property var _visiblePeers: root.tailscalePeers
-    readonly property int _selfIdx: _headerCount + _visiblePeers.length
-    readonly property int _kbdMax: _selfIdx + 1
+    readonly property var _displayItems: {
+        const items = _visiblePeers.slice();
+        if (root.tailscaleOnline && root.tailscaleIp.length > 0) {
+            items.push({ name: root.tailscaleIp + "  \u2022  SELF", ip: root.tailscaleIp, os: "self", online: true });
+        }
+        return items;
+    }
+    readonly property int _kbdMax: 1 + _displayItems.length
 
     // Tracks which peer row just copied its IP so we can flash "COPIED".
     property int copiedIndex: -1
@@ -82,18 +79,16 @@ CardWindow {
     function _activateAt(i) {
         tsPopup.kbdIndex = i;
         if (i === 0) { root.toggleTailscale(); return; }
-        const peer = tsPopup._visiblePeers[i - tsPopup._headerCount];
+        const peer = tsPopup._displayItems[i - 1];
         if (!peer) return;
         root.copyToClipboard(peer.ip);
         tsPopup.copiedIndex = i;
         copiedTimer.restart();
     }
 
-    footer: root.tailscaleOnline && root.tailscalePeers.length > 0
+    footer: root.tailscaleOnline
             ? "\u2191\u2193 CYCLE  \u00b7  \u23CE COPY IP  \u00b7  ESC CLOSE"
-            : root.tailscaleOnline
-              ? "\u23CE COPY IP  \u00b7  ESC CLOSE"
-              : ""
+            : ""
 
     Column {
         width: parent.width
@@ -123,13 +118,13 @@ CardWindow {
         }
 
         Repeater {
-            model: tsPopup._visiblePeers
+            model: tsPopup._displayItems
 
             delegate: Rectangle {
                 required property var modelData
                 required property int index
 
-                readonly property int localIndex: index + tsPopup._headerCount
+                readonly property int localIndex: index + 1
                 readonly property bool isOnline: modelData.online === true
                 readonly property bool isFocused: tsPopup.kbdIndex === localIndex
 
@@ -151,7 +146,8 @@ CardWindow {
                     anchors.left: parent.left
                     anchors.leftMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.os === "macOS" ? "\uF179"
+                    text: modelData.os === "self" ? "\uF0C1"
+                         : modelData.os === "macOS" ? "\uF179"
                          : modelData.os === "iOS" ? "\uF179"
                          : modelData.os === "windows" ? "\uF17A"
                          : modelData.os === "android" ? "\uF17B"
@@ -228,18 +224,6 @@ CardWindow {
         }
 
         Text {
-            visible: root.tailscaleOnline && root.tailscalePeers.length === 0
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            text: "NO PEERS"
-            color: root.inkDeep
-            font.family: root.mono
-            font.pixelSize: 10
-            font.letterSpacing: 2
-            opacity: 0.6
-        }
-
-        Text {
             visible: !root.tailscaleOnline
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
@@ -249,88 +233,6 @@ CardWindow {
             font.pixelSize: 10
             font.letterSpacing: 2
             opacity: 0.6
-        }
-
-        Rectangle {
-            width: parent.width
-            height: 1
-            color: root.sep
-        }
-
-        Rectangle {
-            id: selfRow
-            readonly property int localIndex: tsPopup._selfIdx
-            readonly property bool isFocused: tsPopup.kbdIndex === localIndex
-            // Self-contained copied flash state — no dependency on CardWindow scope.
-            property bool _selfFlash: false
-            visible: root.tailscaleOnline && root.tailscaleIp.length > 0
-            width: parent.width
-            height: 38
-            radius: root.cornerRadius
-            color: _selfFlash
-                   ? Qt.rgba(root.green.r, root.green.g, root.green.b, 0.15)
-                   : (isFocused
-                      ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20)
-                      : (selfMouse.containsMouse
-                         ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
-                         : "transparent"))
-            border.color: _selfFlash ? root.green : (isFocused ? root.seal : "transparent")
-            border.width: _selfFlash ? 2 : (isFocused ? 1.5 : 0)
-            Behavior on color { ColorAnimation { duration: 100 } }
-            Behavior on border.color { ColorAnimation { duration: 100 } }
-
-            Text {
-                id: selfLabel
-                anchors.left: parent.left
-                anchors.leftMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                text: "\uF0C1"
-                color: root.accent
-                font.family: root.mono
-                font.pixelSize: 11
-            }
-            Text {
-                anchors.left: selfLabel.right
-                anchors.leftMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.tailscaleIp + "  \u2022  SELF"
-                color: root.inkDeep
-                font.family: root.mono
-                font.pixelSize: 10
-                font.letterSpacing: 1
-                visible: !_selfFlash
-            }
-            Text {
-                anchors.left: selfLabel.right
-                anchors.leftMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                text: "✓  COPIED"
-                color: root.green
-                font.family: root.mono
-                font.pixelSize: 10
-                font.letterSpacing: 1
-                font.weight: Font.Medium
-                visible: _selfFlash
-            }
-            Timer {
-                id: selfFlashTimer
-                interval: 900
-                onTriggered: selfRow._selfFlash = false
-            }
-            MouseArea {
-                id: selfMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    tsPopup.kbdIndex = localIndex;
-                    if (root.tailscaleIp) {
-                        root.copyToClipboard(root.tailscaleIp);
-                        selfRow._selfFlash = true;
-                        selfFlashTimer.restart();
-                    }
-                }
-            }
         }
     }
 }

@@ -11,6 +11,13 @@ Item {
     implicitHeight: col.implicitHeight + 8
 
     property int _copiedQuickIdx: -1
+    readonly property var _displayItems: {
+        const items = body.nav ? (body.nav.tailscalePeers || []).slice() : [];
+        if (body.nav && body.nav.tailscaleOnline && body.nav.tailscaleIp && body.nav.tailscaleIp.length > 0) {
+            items.push({ name: body.nav.tailscaleIp + "  \u2022  SELF", ip: body.nav.tailscaleIp, os: "self", online: true });
+        }
+        return items;
+    }
     Timer {
         id: quickCopiedTimer
         interval: 900
@@ -58,7 +65,7 @@ Item {
         Rectangle { width: parent.width; height: 1; color: body.root.sep }
 
         Repeater {
-            model: body.nav ? body.nav.tailscalePeers : []
+            model: body._displayItems
 
             delegate: Rectangle {
                 required property var modelData
@@ -79,7 +86,8 @@ Item {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.os === "macOS" ? "\uF179"
+                    text: modelData.os === "self" ? "\uF0C1"
+                         : modelData.os === "macOS" ? "\uF179"
                          : modelData.os === "iOS" ? "\uF179"
                          : modelData.os === "windows" ? "\uF17A"
                          : modelData.os === "android" ? "\uF17B"
@@ -151,16 +159,5 @@ Item {
             }
         }
 
-        Text {
-            visible: body.nav && body.nav.tailscaleOnline && body.nav.tailscalePeers.length === 0
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            text: "NO PEERS"
-            color: body.root.inkDeep
-            font.family: body.root.mono
-            font.pixelSize: 10
-            font.letterSpacing: 2
-            opacity: 0.6
-        }
     }
 }
