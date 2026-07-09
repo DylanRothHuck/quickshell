@@ -517,7 +517,7 @@ Item {
             root.run("wpctl set-default " + id);
         }
         root._moveStreamsToSink(sinkName);
-        root._audioSinkRefreshTimer.restart();
+        _audioSinkRefreshTimer.restart();
     }
     // Move all active sink-inputs to a given sink (pactl name).
     function _moveStreamsToSink(sinkName) {
