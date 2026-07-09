@@ -1851,7 +1851,7 @@ Item {
         id: audioSinksProbe
         running: false
         command: ["bash", "-lc",
-            "printf 'DEFAULT_SINK:%%s\\n' \"$(pactl get-default-sink 2>/dev/null)\" && pactl -f json list sinks 2>/dev/null"]
+            "printf 'DEFAULT_SINK:%s\\n' \"$(pactl get-default-sink 2>/dev/null)\" && pactl -f json list sinks 2>/dev/null"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const t = this.text.trim();
