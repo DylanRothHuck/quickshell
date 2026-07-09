@@ -10,6 +10,13 @@ Item {
 
     implicitHeight: col.implicitHeight + 8
 
+    property int _copiedQuickIdx: -1
+    Timer {
+        id: quickCopiedTimer
+        interval: 900
+        onTriggered: body._copiedQuickIdx = -1
+    }
+
     Component.onCompleted: if (body.nav) body.nav.refreshTailscale()
 
     Column {
@@ -83,7 +90,7 @@ Item {
                 }
                 Text {
                     anchors.left: osIcon.right
-                    anchors.right: ipText.left
+                    anchors.right: ipArea.left
                     anchors.leftMargin: 10
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
@@ -95,17 +102,38 @@ Item {
                     font.weight: isOnline ? Font.Medium : Font.Normal
                     opacity: isOnline ? 1.0 : 0.6
                 }
-                Text {
-                    id: ipText
+                Item {
+                    id: ipArea
                     anchors.right: parent.right
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.ip
-                    color: body.root.inkDeep
-                    font.family: body.root.mono
-                    font.pixelSize: 9
-                    font.letterSpacing: 0.5
-                    opacity: isOnline ? 0.8 : 0.4
+                    width: 90
+                    height: 14
+                    clip: true
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData.ip
+                        color: body.root.inkDeep
+                        font.family: body.root.mono
+                        font.pixelSize: 9
+                        font.letterSpacing: 0.5
+                        opacity: body._copiedQuickIdx === index ? 0 : (isOnline ? 0.8 : 0.4)
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                    }
+                    Text {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "\u2713  COPIED"
+                        color: body.root.green
+                        font.family: body.root.mono
+                        font.pixelSize: 9
+                        font.letterSpacing: 1
+                        font.weight: Font.Medium
+                        opacity: body._copiedQuickIdx === index ? 1 : 0
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                    }
                 }
                 MouseArea {
                     id: peerMouse
@@ -113,7 +141,11 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        if (body.root) body.root.copyToClipboard(modelData.ip);
+                        if (body.root) {
+                            body.root.copyToClipboard(modelData.ip);
+                            body._copiedQuickIdx = index;
+                            quickCopiedTimer.restart();
+                        }
                     }
                 }
             }

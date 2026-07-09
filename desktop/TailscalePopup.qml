@@ -62,12 +62,22 @@ CardWindow {
     readonly property var _visiblePeers: root.tailscalePeers
     readonly property int _kbdMax: _headerCount + _visiblePeers.length
 
+    // Tracks which peer row just copied its IP so we can flash "COPIED".
+    property int copiedIndex: -1
+    Timer {
+        id: copiedTimer
+        interval: 900
+        onTriggered: tsPopup.copiedIndex = -1
+    }
+
     function _activateAt(i) {
         tsPopup.kbdIndex = i;
         if (i === 0) { root.toggleTailscale(); return; }
         const peer = tsPopup._visiblePeers[i - tsPopup._headerCount];
         if (!peer) return;
         root.copyToClipboard(peer.ip);
+        tsPopup.copiedIndex = i;
+        copiedTimer.restart();
     }
 
     footer: root.tailscaleOnline && root.tailscalePeers.length > 0
@@ -141,7 +151,7 @@ CardWindow {
                 }
                 Text {
                     anchors.left: osIcon.right
-                    anchors.right: ipText.left
+                    anchors.right: ipArea.left
                     anchors.leftMargin: 10
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
@@ -153,17 +163,38 @@ CardWindow {
                     font.weight: isOnline ? Font.Medium : Font.Normal
                     opacity: isOnline ? 1.0 : 0.6
                 }
-                Text {
-                    id: ipText
+                Item {
+                    id: ipArea
                     anchors.right: dot.left
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.ip
-                    color: root.inkDeep
-                    font.family: root.mono
-                    font.pixelSize: 9
-                    font.letterSpacing: 0.5
-                    opacity: isOnline ? 0.8 : 0.4
+                    width: 100
+                    height: 16
+                    clip: true
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData.ip
+                        color: root.inkDeep
+                        font.family: root.mono
+                        font.pixelSize: 9
+                        font.letterSpacing: 0.5
+                        opacity: tsPopup.copiedIndex === localIndex ? 0 : (isOnline ? 0.8 : 0.4)
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                    }
+                    Text {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "\u2713  COPIED"
+                        color: root.green
+                        font.family: root.mono
+                        font.pixelSize: 9
+                        font.letterSpacing: 1
+                        font.weight: Font.Medium
+                        opacity: tsPopup.copiedIndex === localIndex ? 1 : 0
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                    }
                 }
                 Text {
                     id: dot
