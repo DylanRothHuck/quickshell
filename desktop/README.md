@@ -58,7 +58,7 @@ right  | weather | display | camera | filmstrip | sep | cpu | bt | wifi | audio 
 ```
 
 - Click the omarchy glyph to toggle the omni-menu palette. Right-click runs `xdg-terminal-exec`.
-- Click the clock to open the calendar popup.
+- Click the clock to open the calendar popup (shows events from `~/caldir/` — see [Calendar data](#calendar-data)).
 - Click a kanji to `hyprctl dispatch workspace N`.
 - Click weather for the forecast popup. Right-click force-refreshes.
 - Click display for warmth, brightness, gamma sliders + presets.
@@ -221,6 +221,21 @@ Oslo
 ```
 
 Or any of: `City, Country` | `LHR` (IATA) | `94103` (zip) | `60.42,11.24` (lat,lon). Click the subtitle inside the weather popup to open the file in your editor; the bar re-fetches on save.
+
+## Calendar data
+
+The calendar calls `omarchy-calendar-events <YYYY-MM>` at startup and on month navigation, and shows dots on days that have events. When a day is selected, matching events are listed below the date detail.
+
+`omarchy-calendar-events` is an external script — this config ships with support for [rencal/caldir](https://github.com/evanpurkhiser/rencal), but you can provide your own script at any path in `$PATH` that returns a JSON array of `{day, title, time?, calendar?}` objects for the given year-month.
+
+```json
+[
+  {"day": 16, "title": "Oración", "time": "19:30", "calendar": "casa"},
+  {"day": 20, "title": "Monotributo", "calendar": "casa"}
+]
+```
+
+`day` is the 1-indexed day-of-month, `title` is required, `time` (HH:MM) and `calendar` name are optional. If no script is found the calendar simply shows the plain month grid without event dots.
 
 ## App scan
 
