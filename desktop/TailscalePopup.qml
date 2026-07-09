@@ -65,10 +65,11 @@ CardWindow {
 
     // Tracks which peer row just copied its IP so we can flash "COPIED".
     property int copiedIndex: -1
+    property bool selfCopied: false
     Timer {
         id: copiedTimer
         interval: 900
-        onTriggered: tsPopup.copiedIndex = -1
+        onTriggered: { tsPopup.copiedIndex = -1; tsPopup.selfCopied = false; }
     }
 
     function _activateAt(i) {
@@ -77,7 +78,7 @@ CardWindow {
         if (i >= _visiblePeers.length + _headerCount) {
             if (root.tailscaleIp) {
                 root.copyToClipboard(root.tailscaleIp);
-                tsPopup.copiedIndex = i;
+                tsPopup.selfCopied = true;
                 copiedTimer.restart();
             }
             return;
@@ -284,36 +285,30 @@ CardWindow {
                 font.family: root.mono
                 font.pixelSize: 11
             }
-            Item {
+            Text {
                 anchors.left: selfLabel.right
-                anchors.right: parent.right
-                anchors.rightMargin: 12
+                anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                height: 16
-
-                Text {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.tailscaleIp
-                    color: root.inkDeep
-                    font.family: root.mono
-                    font.pixelSize: 10
-                    font.letterSpacing: 1
-                    opacity: tsPopup.copiedIndex === localIndex ? 0 : 1
-                    Behavior on opacity { NumberAnimation { duration: 100 } }
-                }
-                Text {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "\u2713  COPIED"
-                    color: root.green
-                    font.family: root.mono
-                    font.pixelSize: 10
-                    font.letterSpacing: 1
-                    font.weight: Font.Medium
-                    opacity: tsPopup.copiedIndex === localIndex ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: 100 } }
-                }
+                text: root.tailscaleIp
+                color: root.inkDeep
+                font.family: root.mono
+                font.pixelSize: 10
+                font.letterSpacing: 1
+                opacity: tsPopup.selfCopied ? 0 : 1
+                Behavior on opacity { NumberAnimation { duration: 100 } }
+            }
+            Text {
+                anchors.left: selfLabel.right
+                anchors.leftMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                text: "\u2713  COPIED"
+                color: root.green
+                font.family: root.mono
+                font.pixelSize: 10
+                font.letterSpacing: 1
+                font.weight: Font.Medium
+                opacity: tsPopup.selfCopied ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 100 } }
             }
             MouseArea {
                 id: selfMouse
