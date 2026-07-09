@@ -45,7 +45,15 @@ CardWindow {
             tsPopup.kbdIndex = Math.min(n - 1, tsPopup.kbdIndex + 1);
             event.accepted = true;
         } else if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space) {
-            tsPopup._activateAt(tsPopup.kbdIndex);
+            if (tsPopup.kbdIndex === tsPopup._selfIdx) {
+                if (root.tailscaleIp) {
+                    root.copyToClipboard(root.tailscaleIp);
+                    selfRow._selfFlash = true;
+                    selfFlashTimer.restart();
+                }
+            } else {
+                tsPopup._activateAt(tsPopup.kbdIndex);
+            }
             event.accepted = true;
         }
     }
@@ -65,24 +73,15 @@ CardWindow {
 
     // Tracks which peer row just copied its IP so we can flash "COPIED".
     property int copiedIndex: -1
-    property bool selfCopied: false
     Timer {
         id: copiedTimer
         interval: 900
-        onTriggered: { tsPopup.copiedIndex = -1; tsPopup.selfCopied = false; }
+        onTriggered: tsPopup.copiedIndex = -1
     }
 
     function _activateAt(i) {
         tsPopup.kbdIndex = i;
         if (i === 0) { root.toggleTailscale(); return; }
-        if (i >= _visiblePeers.length + _headerCount) {
-            if (root.tailscaleIp) {
-                root.copyToClipboard(root.tailscaleIp);
-                tsPopup.selfCopied = true;
-                copiedTimer.restart();
-            }
-            return;
-        }
         const peer = tsPopup._visiblePeers[i - tsPopup._headerCount];
         if (!peer) return;
         root.copyToClipboard(peer.ip);
@@ -259,21 +258,26 @@ CardWindow {
         }
 
         Rectangle {
+            id: selfRow
             readonly property int localIndex: tsPopup._selfIdx
             readonly property bool isFocused: tsPopup.kbdIndex === localIndex
+            // Self-contained copied flash state — no dependency on CardWindow scope.
+            property bool _selfFlash: false
             visible: root.tailscaleOnline && root.tailscaleIp.length > 0
             width: parent.width
             height: 38
             radius: root.cornerRadius
-            color: isFocused
-                   ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20)
-                   : (selfMouse.containsMouse
-                      ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
-                      : "transparent")
-            border.color: isFocused ? root.seal : "transparent"
-            border.width: isFocused ? 1.5 : 0
-            Behavior on color { ColorAnimation { duration: 120 } }
-            Behavior on border.color { ColorAnimation { duration: 120 } }
+            color: _selfFlash
+                   ? Qt.rgba(root.green.r, root.green.g, root.green.b, 0.15)
+                   : (isFocused
+                      ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20)
+                      : (selfMouse.containsMouse
+                         ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                         : "transparent"))
+            border.color: _selfFlash ? root.green : (isFocused ? root.seal : "transparent")
+            border.width: _selfFlash ? 2 : (isFocused ? 1.5 : 0)
+            Behavior on color { ColorAnimation { duration: 100 } }
+            Behavior on border.color { ColorAnimation { duration: 100 } }
 
             Text {
                 id: selfLabel
@@ -289,33 +293,43 @@ CardWindow {
                 anchors.left: selfLabel.right
                 anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.tailscaleIp
+                text: root.tailscaleIp + "  \u2022  SELF"
                 color: root.inkDeep
                 font.family: root.mono
                 font.pixelSize: 10
                 font.letterSpacing: 1
-                opacity: tsPopup.selfCopied ? 0 : 1
-                Behavior on opacity { NumberAnimation { duration: 100 } }
+                visible: !_selfFlash
             }
             Text {
                 anchors.left: selfLabel.right
                 anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                text: "\u2713  COPIED"
+                text: "✓  COPIED"
                 color: root.green
                 font.family: root.mono
                 font.pixelSize: 10
                 font.letterSpacing: 1
                 font.weight: Font.Medium
-                opacity: tsPopup.selfCopied ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: 100 } }
+                visible: _selfFlash
+            }
+            Timer {
+                id: selfFlashTimer
+                interval: 900
+                onTriggered: selfRow._selfFlash = false
             }
             MouseArea {
                 id: selfMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: tsPopup._activateAt(localIndex)
+                onClicked: {
+                    tsPopup.kbdIndex = localIndex;
+                    if (root.tailscaleIp) {
+                        root.copyToClipboard(root.tailscaleIp);
+                        selfRow._selfFlash = true;
+                        selfFlashTimer.restart();
+                    }
+                }
             }
         }
     }
