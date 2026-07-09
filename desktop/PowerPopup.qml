@@ -51,7 +51,7 @@ CardWindow {
             root.powerVisible = false;
             event.accepted = true;
         } else if (k === Qt.Key_B) {
-            root.run("omarchy-launch-screensaver force");
+            root.run("qs -n -d -c screensaver");
             root.powerVisible = false;
             event.accepted = true;
         }
@@ -64,7 +64,7 @@ CardWindow {
         { glyph: "󰗽", label: "Logout",    cmd: "omarchy-system-logout" },
         { glyph: "󰜉", label: "Reboot",    cmd: "omarchy-system-reboot" },
         { glyph: "󰐥", label: "Shutdown",  cmd: "omarchy-system-shutdown" },
-        { glyph: "󰍹", label: "Screensaver", cmd: "omarchy-launch-screensaver force" }
+        { glyph: "󰍹", label: "Screensaver", cmd: "qs -n -d -c screensaver" }
     ]
     property int _kbdIndex: 0
     property string _hoveredLabel: ""

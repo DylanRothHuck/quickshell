@@ -25,7 +25,7 @@ ShellRoot {
     property color seal:   "#c4746e"
 
     // ---------- State ----------
-    property bool active: false
+    property bool active: true
     property int  shaderIndex: 0
 
     // Adding a shader = one entry here + drop its .qsb in shaders/.
@@ -98,8 +98,11 @@ ShellRoot {
     IpcHandler {
         target: "saver"
         function start():  void { root.active = true; }
-        function stop():   void { root.active = false; }
-        function toggle(): void { root.active = !root.active; }
+        function stop():   void { Qt.quit(); }
+        function toggle(): void {
+            if (root.active) Qt.quit();
+            else root.active = true;
+        }
         function next():   void {
             root.shaderIndex = (root.shaderIndex + 1) % root.shaderCount;
             overlay.elapsed = 0;
@@ -265,13 +268,13 @@ ShellRoot {
             property real lastX: -1
             property real lastY: -1
 
-            onPressed: root.active = false
-            onWheel: { root.active = false; }
+            onPressed: Qt.quit()
+            onWheel: { Qt.quit(); }
             onPositionChanged: (m) => {
                 if (lastX < 0) { lastX = m.x; lastY = m.y; return; }
                 if (overlay.armedFor < 0.25) { lastX = m.x; lastY = m.y; return; }
                 const dx = m.x - lastX, dy = m.y - lastY;
-                if (dx*dx + dy*dy > 9) root.active = false;
+                if (dx*dx + dy*dy > 9) Qt.quit();
             }
         }
 
@@ -304,7 +307,7 @@ ShellRoot {
                     e.accepted = true;
                     return;
                 }
-                root.active = false;
+                Qt.quit();
                 e.accepted = true;
             }
         }
