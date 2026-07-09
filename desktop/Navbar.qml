@@ -501,12 +501,27 @@ Item {
         root.audioDefaultSink = id;
         if (id.startsWith("port:")) {
             const entry = root.audioSinks.find(s => s.id === id);
-            if (entry) root.run("pactl set-sink-port " + entry.sinkPactlName + " " + entry.portName);
+            if (entry) {
+                root.run("pactl set-sink-port " + entry.sinkPactlName + " " + entry.portName);
+                root._setAlsaMixer(entry.alsaCard, entry.portName);
+            }
         } else {
             root.run("wpctl set-default " + id);
         }
         audioSinksProbe.running = false;
         audioSinksProbe.running = true;
+    }
+    // Sync ALSA mixer controls when PipeWire port changes — ACP auto-port is
+    // typically off for this hardware, so pactl set-sink-port alone leaves
+    // Speaker/Headphone hardware mixers muted.
+    function _setAlsaMixer(card, port) {
+        if (!card) return;
+        const c = "amixer -c " + card + " sset ";
+        if (port === "analog-output-speaker") {
+            root.run(c + "Speaker 87 unmute && " + c + "'Bass Speaker' on && " + c + "Headphone 0 mute");
+        } else if (port === "analog-output-headphones") {
+            root.run(c + "Headphone 87 unmute && " + c + "Speaker 0 mute && " + c + "'Bass Speaker' off");
+        }
     }
     function refreshAudioSinks() {
         audioSinksProbe.running = false;
@@ -1872,6 +1887,8 @@ Item {
                         const avail = (sink.ports || []).filter(p => p.availability !== "not available");
                         if (avail.length > 0) {
                             root.run("pactl set-sink-port " + sink.name + " " + avail[0].name);
+                            const alsaCard = sink.properties && sink.properties["alsa.card"] || "";
+                            root._setAlsaMixer(alsaCard, avail[0].name);
                         }
                         break;
                     }
@@ -1882,6 +1899,7 @@ Item {
                     const wpctlId = (sink.properties && sink.properties["object.id"]) || String(sink.index);
                     const description = sink.description || sink.name || "Unknown";
                     const isThisDefault = sink.name === defaultSinkName;
+                    const alsaCard = sink.properties && sink.properties["alsa.card"] || "";
                     const ports = (sink.ports || []).filter(p => p.availability !== "not available");
                     if (ports.length >= 2) {
                         ports.forEach(p => {
@@ -1892,7 +1910,8 @@ Item {
                                 isDefault: isDef,
                                 isPort: true,
                                 sinkPactlName: sink.name,
-                                portName: p.name
+                                portName: p.name,
+                                alsaCard: alsaCard
                             };
                             sinks.push(entry);
                             if (isDef) defaultSinkId = entry.id;
@@ -1902,7 +1921,8 @@ Item {
                         sinks.push({
                             id: wpctlId,
                             name: description,
-                            isDefault: isDef
+                            isDefault: isDef,
+                            alsaCard: alsaCard
                         });
                         if (isDef) defaultSinkId = wpctlId;
                     }
