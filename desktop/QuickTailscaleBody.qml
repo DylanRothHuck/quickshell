@@ -14,7 +14,7 @@ Item {
     readonly property var _displayItems: {
         const items = body.nav ? (body.nav.tailscalePeers || []).slice() : [];
         if (body.nav && body.nav.tailscaleOnline && body.nav.tailscaleIp && body.nav.tailscaleIp.length > 0) {
-            items.push({ name: body.nav.tailscaleIp + "  \u2022  SELF", ip: body.nav.tailscaleIp, os: "self", online: true });
+            items.push({ name: (body.nav.tailscaleHostname || body.nav.tailscaleIp) + "  \u2022  SELF", ip: body.nav.tailscaleIp, os: "self", online: true });
         }
         return items;
     }

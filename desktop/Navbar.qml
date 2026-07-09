@@ -292,6 +292,7 @@ Item {
     // ---------- Tailscale state ----------
     property bool   tailscaleOnline: false
     property string tailscaleIp: ""
+    property string tailscaleHostname: ""
     property int    tailscaleOnlineCount: 0
     property int    tailscalePeerCount: 0
     property var    tailscalePeers: []
@@ -1793,6 +1794,7 @@ Item {
             + "{"
             + "  online: .Self.Online,"
             + "  selfIp: .Self.TailscaleIPs[0],"
+            + "  selfHost: (.Self.DNSName | rtrimstr(\".\") | split(\".\")[0]),"
             + "  peers: [.Peer[] | {name: (.DNSName | rtrimstr(\".\") | split(\".\")[0]), ip: .TailscaleIPs[0], os: .OS, online: .Online}],"
             + "  onlineCount: ([.Peer[] | select(.Online == true)] | length),"
             + "  totalPeers: ([.Peer[]] | length)"
@@ -1805,6 +1807,7 @@ Item {
                     const d = JSON.parse(t);
                     root.tailscaleOnline = d.online === true;
                     root.tailscaleIp = d.selfIp || "";
+                    root.tailscaleHostname = d.selfHost || "";
                     const ser = JSON.stringify(d.peers || []);
                     if (ser !== root._tailscaleSer) {
                         root._tailscaleSer = ser;
