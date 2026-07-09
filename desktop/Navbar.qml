@@ -256,7 +256,7 @@ Item {
     // ---------- State ----------
     // Event-driven workspace tracking via Quickshell.Hyprland (instant).
     readonly property int activeWs: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
-    property var existingWs: [1, 2, 3, 4, 5]
+    property var existingWs: []
     // +1 = user navigated to a higher-numbered workspace (rightward along
     // the bar), -1 = lower-numbered (leftward), 0 = no recent travel. The
     // active Workspace cell reads this to bias its kanji's entry offset.
@@ -1467,7 +1467,7 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 const have = this.text.trim().split(",").map(s => parseInt(s)).filter(n => !isNaN(n));
-                root.existingWs = [...new Set([...have, 1, 2, 3, 4, 5])].sort((a,b) => a-b).slice(0, 5);
+                root.existingWs = [...new Set(have)].sort((a,b) => a-b);
             }
         }
     }
