@@ -191,6 +191,15 @@ CardWindow {
                         font.weight: dayCell.isToday || (calendarPopup.isWhiterose && dayCell.isSelected) ? Font.Medium : Font.Light
                     }
 
+                    Rectangle {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: 3
+                        width: 4; height: 4; radius: 2
+                        color: calendarPopup.root.seal
+                        visible: dayCell.isCurrentMonth && dayCell.modelData.hasEvents
+                    }
+
                     MouseArea {
                         id: dayMouse
                         anchors.fill: parent
@@ -272,6 +281,27 @@ CardWindow {
             font.family: calendarPopup.root.mono
             font.pixelSize: 11
             font.letterSpacing: 2
+        }
+
+        Repeater {
+            model: calendarPopup.root.selectedDayEvents
+            delegate: Item {
+                required property var modelData
+                required property int index
+                width: parent.width
+                height: 18
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: calendarPopup.isWhiterose ? 9 : 0
+                    text: (modelData.time ? modelData.time + "  " : "") + modelData.title
+                    color: calendarPopup.root.inkDeep
+                    font.family: calendarPopup.root.mono
+                    font.pixelSize: calendarPopup.isWhiterose ? 10 : 11
+                    elide: Text.ElideRight
+                    width: parent.width - (calendarPopup.isWhiterose ? 18 : 0)
+                }
+            }
         }
     }
 }

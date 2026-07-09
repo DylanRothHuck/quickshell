@@ -824,6 +824,18 @@ Item {
     // (new Date() is opaque to QML's dependency tracker — touching this
     // int forces a recompute even when calendarMonthOffset is unchanged).
     property int calendarTick: 0
+    onCalendarTickChanged: root.refreshCalendarEvents()
+    property var calendarEvents: []
+    property string _calendarEventsSer: ""
+
+    function refreshCalendarEvents() {
+        const now = new Date();
+        const d = new Date(now.getFullYear(), now.getMonth() + root.calendarMonthOffset, 1);
+        const ym = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+        calendarEventsProbe.command = ["omarchy-calendar-events", ym];
+        calendarEventsProbe.running = false;
+        calendarEventsProbe.running = true;
+    }
 
     // Easter Sunday for any Gregorian year via Butcher's anonymous algorithm.
     // Pure arithmetic, no loops; returns a Date in local time.
@@ -880,16 +892,25 @@ Item {
         const today = new Date();
         const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
         const easter = root.easterDate(year);
+        const events = root.calendarEvents || [];
+        const evByDay = {};
+        for (const ev of events) {
+            if (!evByDay[ev.day]) evByDay[ev.day] = [];
+            evByDay[ev.day].push(ev);
+        }
         const cells = [];
-        for (let i = 0; i < startDay; i++) cells.push({day: 0, today: false, holiday: ""});
+        for (let i = 0; i < startDay; i++) cells.push({day: 0, today: false, holiday: "", hasEvents: false, events: []});
         for (let d = 1; d <= lastDay; d++) {
+            const dayEvs = evByDay[d] || [];
             cells.push({
                 day: d,
                 today: isCurrentMonth && d === today.getDate(),
-                holiday: root.norwegianHoliday(year, month, d, easter)
+                holiday: root.norwegianHoliday(year, month, d, easter),
+                hasEvents: dayEvs.length > 0,
+                events: dayEvs
             });
         }
-        while (cells.length < 42) cells.push({day: 0, today: false, holiday: ""});
+        while (cells.length < 42) cells.push({day: 0, today: false, holiday: "", hasEvents: false, events: []});
         return cells;
     }
 
@@ -929,12 +950,42 @@ Item {
         return "";
     }
 
+    readonly property var selectedDayEvents: {
+        if (root.selectedDay <= 0) return [];
+        const cells = root.calendarCells;
+        for (let i = 0; i < cells.length; i++) {
+            if (cells[i].day === root.selectedDay) return cells[i].events || [];
+        }
+        return [];
+    }
+
+    Process {
+        id: calendarEventsProbe
+        running: false
+        command: ["omarchy-calendar-events"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const t = this.text.trim();
+                if (!t) return;
+                try {
+                    const d = JSON.parse(t);
+                    const ser = JSON.stringify(d);
+                    if (ser !== root._calendarEventsSer) {
+                        root._calendarEventsSer = ser;
+                        root.calendarEvents = d;
+                    }
+                } catch (_) {}
+            }
+        }
+    }
+
     function openCalendar() {
         if (root.calendarAnchorItem) root.anchorPopupTo(root.calendarAnchorItem);
         root.calendarMonthOffset = 0;
         root.calendarTick++;
         root.selectedDay = (new Date()).getDate();
         root.calendarVisible = true;
+        root.refreshCalendarEvents();
     }
 
     // ---------- Display popup state ----------

@@ -204,6 +204,15 @@ Item {
                         font.pixelSize: 13
                         font.weight: dayCell.isToday ? Font.Medium : Font.Light
                     }
+
+                    Rectangle {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: 2
+                        width: 3; height: 3; radius: 1.5
+                        color: body.root.seal
+                        visible: dayCell.isCurrentMonth && dayCell.modelData.hasEvents
+                    }
                     MouseArea {
                         id: dayMouse
                         anchors.fill: parent
@@ -239,6 +248,26 @@ Item {
             font.family: body.root.mono
             font.pixelSize: 11
             font.letterSpacing: 2
+        }
+
+        Repeater {
+            model: body.nav ? body.nav.selectedDayEvents : []
+            delegate: Item {
+                required property var modelData
+                required property int index
+                width: parent.width
+                height: 18
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: (modelData.time ? modelData.time + "  " : "") + modelData.title
+                    color: body.root.inkDeep
+                    font.family: body.root.mono
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                    width: parent.width
+                }
+            }
         }
     }
 }
