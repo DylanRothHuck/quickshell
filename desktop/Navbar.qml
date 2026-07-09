@@ -499,17 +499,23 @@ Item {
     function setDefaultSink(id) {
         if (!id) return;
         root.audioDefaultSink = id;
+        const entry = root.audioSinks.find(s => s.id === id);
+        if (!entry) return;
+        const sinkName = entry.sinkPactlName || entry.id;
         if (id.startsWith("port:")) {
-            const entry = root.audioSinks.find(s => s.id === id);
-            if (entry) {
-                root.run("pactl set-sink-port " + entry.sinkPactlName + " " + entry.portName);
-                root._setAlsaMixer(entry.alsaCard, entry.portName);
-            }
+            root.run("pactl set-sink-port " + entry.sinkPactlName + " " + entry.portName);
+            root._setAlsaMixer(entry.alsaCard, entry.portName);
         } else {
             root.run("wpctl set-default " + id);
         }
+        root._moveStreamsToSink(sinkName);
         audioSinksProbe.running = false;
         audioSinksProbe.running = true;
+    }
+    // Move all active sink-inputs to a given sink (pactl name).
+    function _moveStreamsToSink(sinkName) {
+        if (!sinkName) return;
+        root.run("pactl list sink-inputs short 2>/dev/null | awk '{print $1}' | xargs -r -I{} pactl move-sink-input {} " + sinkName);
     }
     // Sync ALSA mixer controls when PipeWire port changes — ACP auto-port is
     // typically off for this hardware, so pactl set-sink-port alone leaves
@@ -1889,6 +1895,7 @@ Item {
                             root.run("pactl set-sink-port " + sink.name + " " + avail[0].name);
                             const alsaCard = sink.properties && sink.properties["alsa.card"] || "";
                             root._setAlsaMixer(alsaCard, avail[0].name);
+                            root._moveStreamsToSink(sink.name);
                         }
                         break;
                     }
@@ -1922,6 +1929,7 @@ Item {
                             id: wpctlId,
                             name: description,
                             isDefault: isDef,
+                            sinkPactlName: sink.name,
                             alsaCard: alsaCard
                         });
                         if (isDef) defaultSinkId = wpctlId;
