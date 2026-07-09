@@ -1861,6 +1861,21 @@ Item {
                 let data;
                 try { data = JSON.parse(t.substring(nl + 1)); } catch (_) { return; }
                 if (!Array.isArray(data)) return;
+                // Auto-repair: if a sink's active port is unavailable (e.g.
+                // headphones unplugged without switching back), switch to the
+                // first available port so audio keeps working.
+                for (const sink of data) {
+                    const activePort = sink.active_port;
+                    if (!activePort) continue;
+                    const activeObj = (sink.ports || []).find(p => p.name === activePort);
+                    if (activeObj && activeObj.availability === "not available") {
+                        const avail = (sink.ports || []).filter(p => p.availability !== "not available");
+                        if (avail.length > 0) {
+                            root.run("pactl set-sink-port " + sink.name + " " + avail[0].name);
+                        }
+                        break;
+                    }
+                }
                 const sinks = [];
                 let defaultSinkId = "";
                 data.forEach(sink => {
