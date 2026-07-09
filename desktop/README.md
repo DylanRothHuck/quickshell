@@ -64,7 +64,8 @@ right  | weather | display | camera | filmstrip | sep | cpu | bt | wifi | audio 
 - Click display for warmth, brightness, gamma sliders + presets.
 - Click camera to browse `~/Pictures/screenshot-*.png`. Right-click captures a new one.
 - Click filmstrip to browse recent videos in `~/Videos`. Right-click opens the folder.
-- Click audio for `omarchy-launch-audio`. Right-click toggles mute.
+- Click audio for `omarchy-launch-audio`. Right-click toggles mute. The audio popup expands multi-port sinks (Speakers/Headphones) into separate entries and auto-repairs when a port goes unavailable.
+- Click Tailscale icon to open the peer list (self shown as a regular peer row, hostname instead of IP).
 - Click battery for the power menu.
 - Click the edge arrow to cycle the bar between top, right, bottom, left.
 - Cycle bar faces with `qs -c desktop ipc call bar toggle`; jump to the plain White Rose face with `qs -c desktop ipc call bar whiterose`.
@@ -277,7 +278,12 @@ Common tweaks:
 | Want to change | Where |
 | --- | --- |
 | Bar height | `barHeight` in `Navbar.qml`. |
-| Workspace count | `Repeater { model: 10 ... }` in `Bar.qml`. |
+| Workspace count | `Repeater { model: 10 ... }` in each `Bar*.qml`. |
+| Workspace brightness | `present` in `existingWs` — only workspaces with open windows are bright; empty ones are dim. |
+| Tailscale self IP | Displayed as a regular peer row in `TailscalePopup.qml` (no separate "SELF" header). |
+| Tailscale startup probe | `Component.onCompleted` calls `refreshTailscale()` so the icon is live from launch. |
+| Audio device grouping | Multi-port sinks (Speakers/Headphones) expand into separate entries in the device picker. Probe in `Navbar.qml` runs `pactl -f json list sinks`. |
+| Audio auto-repair | When a port becomes unavailable (e.g. headphones unplugged), the probe auto-switches to the first available port + restores ALSA mixer controls. |
 | Bar font | `mono` / `serif` in `Navbar.qml`. |
 | Palette font | `mono` / `serif` in `OmniMenu.qml`. |
 | Palette result cap | `maxResults` in `OmniMenu.qml`. |
