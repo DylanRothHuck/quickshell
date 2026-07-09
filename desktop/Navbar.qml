@@ -2065,9 +2065,11 @@ Item {
             }
         }
     }
-    Component.onCompleted: refreshPowerProfile()
+    Component.onCompleted: { refreshPowerProfile(); refreshTailscale(); }
     Timer { interval: 3000; running: true; repeat: true; triggeredOnStart: false
         onTriggered: { powerProfileProbe.running = false; powerProfileProbe.running = true; } }
+    Timer { interval: 10000; running: true; repeat: true; triggeredOnStart: false
+        onTriggered: refreshTailscale() }
 
     // ---------- Omarchy update probe ----------
     // Mirrors waybar's custom/update: omarchy-update-available exits 0 and
