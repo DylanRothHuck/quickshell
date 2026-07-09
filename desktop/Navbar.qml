@@ -462,6 +462,14 @@ Item {
     property var    audioSinks: []
     property string audioDefaultSink: ""
     property string _audioSinksSer: ""
+    Timer {
+        id: _audioSinkRefreshTimer
+        interval: 200
+        onTriggered: {
+            audioSinksProbe.running = false;
+            audioSinksProbe.running = true;
+        }
+    }
 
     property var    audioSources: []
     property string audioDefaultSource: ""
@@ -509,8 +517,7 @@ Item {
             root.run("wpctl set-default " + id);
         }
         root._moveStreamsToSink(sinkName);
-        audioSinksProbe.running = false;
-        audioSinksProbe.running = true;
+        root._audioSinkRefreshTimer.restart();
     }
     // Move all active sink-inputs to a given sink (pactl name).
     function _moveStreamsToSink(sinkName) {
@@ -1896,6 +1903,7 @@ Item {
                             const alsaCard = sink.properties && sink.properties["alsa.card"] || "";
                             root._setAlsaMixer(alsaCard, avail[0].name);
                             root._moveStreamsToSink(sink.name);
+                            _audioSinkRefreshTimer.restart();
                         }
                         break;
                     }
