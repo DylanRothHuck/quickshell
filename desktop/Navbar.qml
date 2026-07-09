@@ -499,8 +499,12 @@ Item {
     function setDefaultSink(id) {
         if (!id) return;
         root.audioDefaultSink = id;
-        root.run("wpctl set-default " + id);
-        // Re-probe so the badge re-evaluates after wpctl applies.
+        if (id.startsWith("port:")) {
+            const entry = root.audioSinks.find(s => s.id === id);
+            if (entry) root.run("pactl set-sink-port " + entry.sinkPactlName + " " + entry.portName);
+        } else {
+            root.run("wpctl set-default " + id);
+        }
         audioSinksProbe.running = false;
         audioSinksProbe.running = true;
     }
@@ -1839,50 +1843,65 @@ Item {
     }
 
     // ---------- Audio sinks probe ----------
-    // wpctl status's structured form: lines like
-    //   "*    52. WH-1000XM4              [vol: 0.45]"
-    // The leading "*" flags the current default; we capture id, label, and
-    // default state. Skipped automatically when wireplumber isn't around.
+    // Reads `pactl -f json list sinks` which includes per-sink port info
+    // (Speakers, Headphones, etc.). Asks pactl for the default sink name,
+    // then expands multi-port sinks into individual port entries so the
+    // device picker shows e.g. "Speakers" and "Headphones" side by side.
     Process {
         id: audioSinksProbe
         running: false
-        // Tracks the Audio top-level section AND the Sinks subsection
-        // separately so we don't pick up Sources, Filters, or Video's
-        // Sinks. Section header lines start with `├─` or `└─`; the Audio
-        // section ends at the next top-level label (Video / Settings).
         command: ["bash", "-lc",
-            "wpctl status 2>/dev/null | awk '"
-            + "  /^Audio$/                                    {sec=\"audio\"; sub=\"\"; next}"
-            + "  /^[A-Z][a-zA-Z]+$/                           {sec=\"\";      sub=\"\"; next}"
-            + "  /^[[:space:]]*[├└]─[[:space:]]*Sinks:/       {sub=\"sinks\"; next}"
-            + "  /^[[:space:]]*[├└]─/                          {sub=\"\";      next}"
-            + "  sec==\"audio\" && sub==\"sinks\" {"
-            + "    star=(index($0,\"*\")>0 && index($0,\"*\")<index($0,\".\")) ? 1 : 0;"
-            + "    line=$0;"
-            + "    sub(/^[ │├─└*]+/, \"\", line);"
-            + "    if (match(line, /^([0-9]+)\\. (.+)\\[/, m)) {"
-            + "      gsub(/[ \\t]+$/, \"\", m[2]);"
-            + "      printf \"%s\\t%s\\t%d\\n\", m[1], m[2], star;"
-            + "    }"
-            + "  }'"]
+            "printf 'DEFAULT_SINK:%%s\\n' \"$(pactl get-default-sink 2>/dev/null)\" && pactl -f json list sinks 2>/dev/null"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const lines = this.text.trim().split("\n").filter(s => s.length > 0);
-                const sinks = lines.map(line => {
-                    const f = line.split("\t");
-                    return {
-                        id: f[0] || "",
-                        name: (f[1] || "").trim(),
-                        isDefault: f[2] === "1"
-                    };
+                const t = this.text.trim();
+                const nl = t.indexOf("\n");
+                if (nl < 0) return;
+                const defaultSinkName = t.startsWith("DEFAULT_SINK:") ? t.substring(13, nl).trim() : "";
+                let data;
+                try { data = JSON.parse(t.substring(nl + 1)); } catch (_) { return; }
+                if (!Array.isArray(data)) return;
+                const sinks = [];
+                let defaultSinkId = "";
+                data.forEach(sink => {
+                    const wpctlId = (sink.properties && sink.properties["object.id"]) || String(sink.index);
+                    const description = sink.description || sink.name || "Unknown";
+                    const isThisDefault = sink.name === defaultSinkName;
+                    const ports = (sink.ports || []).filter(p => p.availability !== "not available");
+                    if (ports.length >= 2) {
+                        ports.forEach(p => {
+                            const isDef = isThisDefault && p.name === sink.active_port;
+                            const entry = {
+                                id: "port:" + wpctlId + ":" + p.name,
+                                name: p.description || p.name,
+                                isDefault: isDef,
+                                isPort: true,
+                                sinkPactlName: sink.name,
+                                portName: p.name
+                            };
+                            sinks.push(entry);
+                            if (isDef) defaultSinkId = entry.id;
+                        });
+                    } else {
+                        const isDef = isThisDefault;
+                        sinks.push({
+                            id: wpctlId,
+                            name: description,
+                            isDefault: isDef
+                        });
+                        if (isDef) defaultSinkId = wpctlId;
+                    }
                 });
+                if (!defaultSinkId && sinks.length > 0) {
+                    sinks[0].isDefault = true;
+                    defaultSinkId = sinks[0].id;
+                }
                 const ser = JSON.stringify(sinks);
                 if (ser !== root._audioSinksSer) {
                     root._audioSinksSer = ser;
                     root.audioSinks = sinks;
                 }
-                const def = sinks.find(s => s.isDefault);
-                if (def && root.audioDefaultSink !== def.id) root.audioDefaultSink = def.id;
+                if (defaultSinkId && root.audioDefaultSink !== defaultSinkId) root.audioDefaultSink = defaultSinkId;
             }
         }
     }

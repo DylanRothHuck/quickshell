@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Layouts
 
 // Audio detail — mute toggle + volume slider + output sink picker.
-// Sinks come from `wpctl status`; switching uses `wpctl set-default`.
+// Sinks come from `pactl -f json list sinks`; switching uses `wpctl set-default`
+// (or `pactl set-sink-port` for multi-port devices like Speakers + Headphones).
 // Keyboard: 0 = mute, 1 = slider (left/right adjust ±5%), 2..N+1 sinks.
 // Enter activates the focused control (toggle, or set sink).
 Item {
