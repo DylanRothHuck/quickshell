@@ -131,7 +131,7 @@ CardWindow {
                     anchors.leftMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
                     text: modelData.os === "macOS" ? "\uF179"
-                         : modelData.os === "iOS" ? "\uF14A"
+                         : modelData.os === "iOS" ? "\uF179"
                          : modelData.os === "windows" ? "\uF17A"
                          : modelData.os === "android" ? "\uF17B"
                          : "\uF109"
