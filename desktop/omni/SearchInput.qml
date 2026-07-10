@@ -48,16 +48,30 @@ Item {
         font.letterSpacing: 1
     }
 
-    // Blinking caret riding the end of the query.
+    // Hidden Text used to measure the pixel width of the query text
+    // up to the cursor position, so the caret can be positioned accurately.
+    Text {
+        id: cursorMetric
+        visible: false
+        font.family: input.omni.mono
+        font.pixelSize: 14 * input.omni.fontScale
+        font.letterSpacing: 1
+        text: input.omni.query.substring(0, input.omni.cursorPos)
+    }
+
+    // Blinking caret positioned at the cursor offset within the query.
     Rectangle {
         id: caret
         width: 2
         height: 16
         color: input.omni.seal
         anchors.verticalCenter: parent.verticalCenter
-        x: input.omni.query.length === 0
-           ? searchPrompt.x + searchPrompt.width + 10
-           : queryText.x + queryText.contentWidth + 2
+        x: {
+            if (input.omni.query.length === 0) {
+                return searchPrompt.x + searchPrompt.width + 10;
+            }
+            return queryText.x + cursorMetric.contentWidth + 2;
+        }
         visible: input.omni.visible_
         SequentialAnimation on opacity {
             running: input.omni.visible_

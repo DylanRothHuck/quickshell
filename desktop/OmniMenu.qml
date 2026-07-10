@@ -78,6 +78,7 @@ Item {
     // PanelWindow's visibility binding below.
     property bool visible_: false
     property string query: ""
+    property int cursorPos: 0
     property int selectedIndex: 0
     // Active drill-down. "" means root (category navigators + everything
     // searchable); any other value pins the list to that category. Set by
@@ -363,6 +364,7 @@ Item {
 
     function open() {
         root.query = "";
+        root.cursorPos = 0;
         root.selectedIndex = 0;
         root.categoryFilter = "";
         root.visible_ = true;
@@ -385,12 +387,14 @@ Item {
             root.aiChatModel = "";
             aiChat.clear();
             root.query = "";
+            root.cursorPos = 0;
             root.selectedIndex = 0;
             return true;
         }
         if (root.categoryFilter !== "") {
             root.categoryFilter = "";
             root.query = "";
+            root.cursorPos = 0;
             root.selectedIndex = 0;
             return true;
         }
@@ -466,6 +470,7 @@ Item {
         if (item.isCategory) {
             root.categoryFilter = item.target;
             root.query = "";
+            root.cursorPos = 0;
             root.selectedIndex = 0;
             return;
         }
@@ -574,6 +579,7 @@ Item {
             if (msg.length > 0) {
                 aiChat.submit(msg);
                 root.query = "";
+                root.cursorPos = 0;
             }
             return;
         }
@@ -896,6 +902,25 @@ Item {
             // Swallow clicks so the underlying dismiss MouseArea doesn't fire.
             MouseArea { anchors.fill: parent }
 
+            // Clipboard paste via wl-paste (Wayland). The Process fires
+            // asynchronously; onStreamFinished inserts the text at cursorPos.
+            Process {
+                id: clipProc
+                running: false
+                command: ["true"]
+                stdout: StdioCollector {
+                    onStreamFinished: {
+                        const text = this.text.trim();
+                        if (text.length > 0) {
+                            root.query = root.query.slice(0, root.cursorPos) + text
+                                       + root.query.slice(root.cursorPos);
+                            root.cursorPos += text.length;
+                            root.selectedIndex = 0;
+                        }
+                    }
+                }
+            }
+
             focus: root.visible_
             Keys.onPressed: function(event) {
                 // hjkl → arrow translation (Vim-style nav). Only active
@@ -943,9 +968,11 @@ Item {
                         root.aiChatModel = "";
                         aiChat.clear();
                         root.query = "";
+                        root.cursorPos = 0;
                         root.selectedIndex = 0;
                     } else if (root.query.length > 0) {
                         root.query = "";
+                        root.cursorPos = 0;
                         root.selectedIndex = 0;
                     } else if (!root.goUp()) {
                         root.close();
@@ -956,6 +983,12 @@ Item {
                     event.accepted = true;
                 } else if (root.quickMode && e2.key === Qt.Key_Right) {
                     root.moveQuickSelection(1);
+                    event.accepted = true;
+                } else if (!root.quickMode && e2.key === Qt.Key_Left) {
+                    root.cursorPos = Math.max(0, root.cursorPos - 1);
+                    event.accepted = true;
+                } else if (!root.quickMode && e2.key === Qt.Key_Right) {
+                    root.cursorPos = Math.min(root.query.length, root.cursorPos + 1);
                     event.accepted = true;
                 } else if (root.quickMode && e2.key === Qt.Key_Up) {
                     root.moveQuickSelection(-root.quickGridCols);
@@ -1040,14 +1073,35 @@ Item {
                     root.moveSelection(-8, false);
                     event.accepted = true;
                 } else if (e2.key === Qt.Key_Home) {
+                    root.cursorPos = 0;
                     root.selectedIndex = 0;
                     resultListInstance.list.positionViewAtIndex(0, ListView.Beginning);
                     event.accepted = true;
                 } else if (e2.key === Qt.Key_End) {
+                    root.cursorPos = root.query.length;
                     root.selectedIndex = Math.max(0, root.filteredItems.length - 1);
                     resultListInstance.list.positionViewAtIndex(root.selectedIndex, ListView.End);
                     event.accepted = true;
                 } else if (e2.key === Qt.Key_Return || e2.key === Qt.Key_Enter) {
+                    // URL detection: if the query looks like a URL (with or
+                    // without protocol), open it directly in the browser.
+                    if (!root.quickMode) {
+                        const _q = root.query.trim();
+                        const _isUrl = /^https?:\/\//.test(_q)
+                            || /^[a-zA-Z0-9]([a-zA-Z0-9-]*\.)+[a-zA-Z]{2,}(\/\S*)?$/.test(_q);
+                        if (_isUrl) {
+                            const _url = /^https?:\/\//.test(_q) ? _q : "https://" + _q;
+                            runner.command = ["sh", "-c",
+                                "setsid -f uwsm-app -- bash -c "
+                                + JSON.stringify(Data.openUrl(_url))
+                                + " >/dev/null 2>&1"];
+                            runner.running = false;
+                            runner.running = true;
+                            root.close();
+                            event.accepted = true;
+                            return;
+                        }
+                    }
                     if (root.quickMode) {
                         const t = root.filteredQuickTiles[root.selectedIndex];
                         if (t) root.expandTile(t);
@@ -1057,11 +1111,13 @@ Item {
                     }
                     event.accepted = true;
                 } else if (e2.key === Qt.Key_Backspace) {
-                    // Backspace deletes a char first; once the query is
-                    // empty it walks back up one level so the same key
-                    // unwinds both the typed query and the breadcrumb.
-                    if (root.query.length > 0) root.query = root.query.slice(0, -1);
-                    else root.goUp();
+                    if (root.cursorPos > 0) {
+                        root.query = root.query.slice(0, root.cursorPos - 1)
+                                   + root.query.slice(root.cursorPos);
+                        root.cursorPos--;
+                    } else {
+                        root.goUp();
+                    }
                     event.accepted = true;
                 } else if (e2.key === Qt.Key_S && (e2.modifiers & Qt.ControlModifier)) {
                     const it = root.filteredItems[root.selectedIndex];
@@ -1111,13 +1167,19 @@ Item {
                         previewPaneInstance.tldrEdit.deselect();
                     }
                     event.accepted = true;
+                } else if (e2.key === Qt.Key_V && (e2.modifiers & Qt.ControlModifier)
+                           && !root.quickMode) {
+                    // Ctrl+V: paste from Wayland clipboard via wl-paste.
+                    clipProc.command = ["wl-paste", "--no-newline"];
+                    clipProc.running = false;
+                    clipProc.running = true;
+                    event.accepted = true;
                 } else if (!root.quickMode && event.text && event.text.length === 1) {
                     const ch = event.text;
-                    // Printable range; lets letters, digits, and spaces in,
-                    // keeps modifier-driven control codes out. Skipped in
-                    // quickMode — there's no search field to feed.
                     if (ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127) {
-                        root.query += ch;
+                        root.query = root.query.slice(0, root.cursorPos) + ch
+                                   + root.query.slice(root.cursorPos);
+                        root.cursorPos++;
                         root.selectedIndex = 0;
                         event.accepted = true;
                     }
