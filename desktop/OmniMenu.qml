@@ -1174,6 +1174,13 @@ Item {
                     clipProc.running = false;
                     clipProc.running = true;
                     event.accepted = true;
+                } else if (e2.key === Qt.Key_Insert && (e2.modifiers & Qt.ShiftModifier)
+                           && !root.quickMode) {
+                    // Shift+Insert: universal paste (SUPER+V sends this).
+                    clipProc.command = ["wl-paste", "--no-newline"];
+                    clipProc.running = false;
+                    clipProc.running = true;
+                    event.accepted = true;
                 } else if (!root.quickMode && event.text && event.text.length === 1) {
                     const ch = event.text;
                     if (ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127) {
