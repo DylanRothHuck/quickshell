@@ -48,6 +48,7 @@ PanelWindow {
         bar.root.btAnchorItem = btMod;
         bar.root.tailscaleAnchorItem = tsMod;
         bar.root.audioAnchorItem = audioMod;
+        bar.root.notificationAnchorItem = notifIndicator;
     }
 
     function handleNetBurst() {
@@ -372,7 +373,8 @@ PanelWindow {
                 }
             }
 
-            // Notification silencing indicator — to the right of idle disabled
+            // Notification indicator — shows unread count, click opens center,
+            // right-click toggles DND. Always visible (like the idle indicator).
             Item {
                 id: notifIndicator
                 anchors.left: idleIndicator.right
@@ -380,16 +382,39 @@ PanelWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 width: visible ? 16 : 0
                 height: bar.root.barHeight
-                visible: bar.root.isHorizontal && bar.root.notificationSilencing
+                visible: bar.root.isHorizontal
 
                 Text {
                     anchors.centerIn: parent
                     anchors.verticalCenterOffset: -1
-                    text: "󰂛"
-                    color: notifMouse.containsMouse ? bar.root.seal : bar.root.ink
+                    text: bar.root.notificationDnd ? "\uf1f6" : "\uf0f3"
+                    color: notifMouse.containsMouse ? bar.root.seal
+                           : (bar.root.notificationUnread > 0 ? bar.root.seal : bar.root.ink)
                     font.family: bar.root.mono
                     font.pixelSize: 9
                     Behavior on color { ColorAnimation { duration: 180 } }
+                }
+                // Unread badge
+                Rectangle {
+                    visible: bar.root.notificationUnread > 0
+                    anchors.top: parent.top
+                    anchors.topMargin: 2
+                    anchors.right: parent.right
+                    anchors.rightMargin: 1
+                    width: Math.max(10, notifBadgeText.implicitWidth + 4)
+                    height: 10
+                    radius: 5
+                    color: bar.root.seal
+                    Text {
+                        id: notifBadgeText
+                        anchors.centerIn: parent
+                        anchors.verticalCenterOffset: -0.5
+                        text: bar.root.notificationUnread > 9 ? "9+" : String(bar.root.notificationUnread)
+                        color: bar.root.bg
+                        font.family: bar.root.mono
+                        font.pixelSize: 7
+                        font.weight: Font.Bold
+                    }
                 }
                 Rectangle {
                     anchors.fill: parent; anchors.margins: 2; radius: 2
@@ -399,8 +424,12 @@ PanelWindow {
                 MouseArea {
                     id: notifMouse
                     anchors.fill: parent; hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: { bar.root.run("omarchy-toggle-notification-silencing"); bar.root.refreshNotificationSilencing(); }
+                    onClicked: (e) => {
+                        if (e.button === Qt.RightButton) bar.root.toggleNotificationDnd();
+                        else bar.root.openNotificationCenter();
+                    }
                 }
             }
 

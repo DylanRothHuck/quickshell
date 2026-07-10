@@ -1437,12 +1437,11 @@ Item {
             + "m=$(pamixer --get-mute 2>/dev/null || echo false); "
             + "pgrep -f '^gpu-screen-recorder' >/dev/null && sr=1 || sr=0; "
             + "pgrep -x hypridle >/dev/null && idle=0 || idle=1; "
-            + "makoctl mode 2>/dev/null | grep -q 'do-not-disturb' && dnd=1 || dnd=0; "
-            + "printf '%d|%d|%s|%s|%s|%s|%s' \"$cpu\" \"$mem\" \"$v\" \"$m\" \"$sr\" \"$idle\" \"$dnd\""]
+            + "printf '%d|%d|%s|%s|%s|%s' \"$cpu\" \"$mem\" \"$v\" \"$m\" \"$sr\" \"$idle\""]
         stdout: StdioCollector {
             onStreamFinished: {
                 const p = this.text.split("|");
-                if (p.length < 7) return;
+                if (p.length < 6) return;
                 root.cpuVal = parseInt(p[0]) || 0;
                 root.memVal = parseInt(p[1]) || 0;
                 const v = parseInt(p[2]); root.audioVol = isNaN(v) ? 0 : v;
@@ -1450,7 +1449,6 @@ Item {
                 root.updateAudioIcon();
                 root.screenRecording = p[4] === "1";
                 root.idleDisabled = p[5] === "1";
-                root.notificationSilencing = p[6] === "1";
             }
         }
     }
@@ -1694,11 +1692,156 @@ Item {
         combined2sProbe.running = true;
     }
 
-    // ---------- Notification silencing indicator ----------
-    property bool notificationSilencing: false
-    function refreshNotificationSilencing() {
-        combined2sProbe.running = false;
-        combined2sProbe.running = true;
+    // ---------- Notification system ----------
+    // Replaces mako. Quickshell's NotificationServer claims
+    // org.freedesktop.Notifications; toasts appear as overlay cards;
+    // a CardWindow notification center is accessible from the bar.
+    property var notificationHistory: []
+    property var activeToastData: []
+    property bool notificationCenterVisible: false
+    property int notificationUnread: 0
+    property Item notificationAnchorItem: null
+
+    // DND persists across relogin via a one-line state file.
+    property bool notificationDnd: false
+    readonly property string notificationDndStatePath:
+        Quickshell.env("HOME") + "/.local/state/quickshell-desktop/notification-dnd"
+
+    function handleNotification(notification) {
+        notification.tracked = true;
+
+        // Build a serialisable notification record.
+        const actions = [];
+        if (notification.actions) {
+            for (let i = 0; i < notification.actions.length; i++) {
+                actions.push({
+                    identifier: notification.actions[i].identifier,
+                    text: notification.actions[i].text
+                });
+            }
+        }
+
+        const now = new Date();
+        const data = {
+            notifId: String(notification.id),
+            appName: notification.appName || "",
+            summary: notification.summary || "",
+            body: notification.body || "",
+            image: notification.image || "",
+            appIcon: notification.appIcon || "",
+            urgency: notification.urgency || 1,
+            actions: actions,
+            expireTimeout: notification.expireTimeout,
+            transient: notification.transient || false,
+            time: now,
+            timeStr: "",
+            _notification: notification
+        };
+
+        // Compute relative time string.
+        data.timeStr = _relativeTime(now);
+
+        // Push to history (newest first).
+        root.notificationHistory = [data].concat(root.notificationHistory);
+
+        // Show toast unless DND or transient.
+        if (!root.notificationDnd && !data.transient) {
+            root.notificationUnread++;
+            // Delegate to shell.qml toast spawner.
+            if (typeof toastWindow !== "undefined" || typeof root !== "undefined") {
+                // Find the ShellRoot to call showNotificationToast.
+                _spawnToast(data);
+            }
+        }
+    }
+
+    function _relativeTime(date) {
+        const diff = Date.now() - date.getTime();
+        const m = Math.floor(diff / 60000);
+        if (m < 1) return "now";
+        const h = Math.floor(m / 60);
+        const d = Math.floor(h / 24);
+        if (d > 0) return d + "d";
+        if (h > 0) return h + "h";
+        return m + "m";
+    }
+
+    // Walk up to ShellRoot to call showNotificationToast.
+    function _spawnToast(data) {
+        let p = root;
+        while (p && !p.showNotificationToast) {
+            p = p.parent;
+            if (!p || p === root) break;
+        }
+        if (p && p.showNotificationToast) {
+            // Wrap notification data for the toast component.
+            p.showNotificationToast({
+                root: root,
+                notifId: data.notifId,
+                appName: data.appName,
+                summary: data.summary,
+                body: data.body,
+                image: data.image,
+                urgency: data.urgency,
+                actions: data.actions,
+                timeout: data.urgency === 2 ? 10000 : 5000
+            });
+        }
+    }
+
+    function dismissNotification(id) {
+        root.notificationHistory = root.notificationHistory.filter(
+            function(n) { return n.notifId !== id; }
+        );
+    }
+
+    function clearAllNotifications() {
+        root.notificationHistory = [];
+        root.notificationUnread = 0;
+    }
+
+    function openNotificationCenter() {
+        if (root.notificationAnchorItem) root.anchorPopupTo(root.notificationAnchorItem);
+        root.notificationCenterVisible = true;
+        root.notificationUnread = 0;
+    }
+
+    function toggleNotificationDnd() {
+        root.setNotificationDnd(!root.notificationDnd);
+    }
+
+    function setNotificationDnd(on) {
+        const want = !!on;
+        root.notificationDnd = want;
+        notifDndWriter.command = ["bash", "-lc",
+            "mkdir -p " + JSON.stringify(root.notificationDndStatePath.replace(/\/[^/]+$/, ""))
+            + " && printf '%s' " + JSON.stringify(want ? "1" : "0")
+            + " > " + JSON.stringify(root.notificationDndStatePath)];
+        notifDndWriter.running = false;
+        notifDndWriter.running = true;
+    }
+
+    Process { id: notifDndWriter; running: false }
+    Process {
+        id: notifDndReader
+        running: true
+        command: ["cat", root.notificationDndStatePath]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.notificationDnd = this.text.trim() === "1";
+                root.notificationSilencing = root.notificationDnd;
+            }
+        }
+        onExited: function(code) { if (code !== 0) root.notificationDnd = false; }
+    }
+
+    // Keep notificationSilencing in sync for Bar.qml indicator compatibility.
+    property bool notificationSilencing: notificationDnd
+
+    function invokeNotificationAction(identifier) {
+        // Walk tracked notifications to find and invoke the action.
+        // This is a no-op placeholder; actual invocation happens via the
+        // NotificationServer's tracked list if needed.
     }
 
     // ---------- Voxtype indicator ----------
@@ -2600,6 +2743,19 @@ Item {
         }
         function open(): void  { root.openWallpaper(); }
         function close(): void { root.wallpaperVisible = false; }
+    }
+
+    // Notification center (bell icon in bar, or IPC).
+    IpcHandler {
+        target: "notifications"
+        function toggle(): void {
+            if (root.notificationCenterVisible) root.notificationCenterVisible = false;
+            else root.openNotificationCenter();
+        }
+        function open(): void  { root.openNotificationCenter(); }
+        function close(): void { root.notificationCenterVisible = false; }
+        function clear(): void { root.clearAllNotifications(); }
+        function dnd(): void   { root.toggleNotificationDnd(); }
     }
 
     // ---------- MPRIS (now playing) ----------
