@@ -382,7 +382,7 @@ PanelWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 width: visible ? 16 : 0
                 height: bar.root.barHeight
-                visible: bar.root.isHorizontal
+                visible: bar.root.isHorizontal && (bar.root.notificationUnread > 0 || bar.root.notificationDnd || bar.root.notificationHistory.length > 0)
 
                 Text {
                     anchors.centerIn: parent
@@ -786,7 +786,9 @@ PanelWindow {
             Module {
                 id: tsMod
                 root: bar.root
-                glyph: "\uF0E8"
+                glyph: "⠙⠁"
+                glyphXOffset: 2
+                glyphYOffset: 2
                 color: bar.root.tailscaleOnline ? bar.root.accent : bar.root.ink
                 tooltip: bar.root.tailscaleOnline
                          ? "Tailscale \u00b7 " + bar.root.tailscaleOnlineCount + "/" + bar.root.tailscalePeerCount + " online"

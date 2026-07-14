@@ -16,6 +16,7 @@ Item {
     // Negative = up, positive = down — override per-instance if a glyph
     // needs more.
     property int glyphYOffset: -1
+    property int glyphXOffset: 0
 
     signal activated()
     signal rightActivated()
@@ -49,6 +50,7 @@ Item {
 
     Text {
         anchors.centerIn: parent
+        anchors.horizontalCenterOffset: modItem.glyphXOffset
         anchors.verticalCenterOffset: modItem.glyphYOffset
         text: modItem.glyph
         color: modItem.color

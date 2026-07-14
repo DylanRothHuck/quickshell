@@ -84,7 +84,7 @@ function buildDyn(n) {
             tone: !n.btPowered ? n.inkDeep : n.ink
         },
         tailscale: {
-            glyph: "\uF0E8",
+            glyph: "⠙⠁",
             label: "TAILSCALE",
             sub: n.tailscaleOnline
                  ? (n.tailscaleOnlineCount + "/" + n.tailscalePeerCount + " ONLINE")
