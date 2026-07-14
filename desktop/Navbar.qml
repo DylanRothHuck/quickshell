@@ -1694,10 +1694,9 @@ Item {
 
     // ---------- Notification system ----------
     // Replaces mako. Quickshell's NotificationServer claims
-    // org.freedesktop.Notifications; toasts appear as overlay cards;
-    // a CardWindow notification center is accessible from the bar.
+    // org.freedesktop.Notifications; a CardWindow notification center
+    // is accessible from the bar.
     property var notificationHistory: []
-    property var activeToastData: []
     property bool notificationCenterVisible: false
     property int notificationUnread: 0
     property Item notificationAnchorItem: null
@@ -1744,14 +1743,9 @@ Item {
         // Push to history (newest first).
         root.notificationHistory = [data].concat(root.notificationHistory);
 
-        // Show toast unless DND or transient.
+        // Track unread unless DND or transient.
         if (!root.notificationDnd && !data.transient) {
             root.notificationUnread++;
-            // Delegate to shell.qml toast spawner.
-            if (typeof toastWindow !== "undefined" || typeof root !== "undefined") {
-                // Find the ShellRoot to call showNotificationToast.
-                _spawnToast(data);
-            }
         }
     }
 
@@ -1766,28 +1760,6 @@ Item {
         return m + "m";
     }
 
-    // Walk up to ShellRoot to call showNotificationToast.
-    function _spawnToast(data) {
-        let p = root;
-        while (p && !p.showNotificationToast) {
-            p = p.parent;
-            if (!p || p === root) break;
-        }
-        if (p && p.showNotificationToast) {
-            // Wrap notification data for the toast component.
-            p.showNotificationToast({
-                root: root,
-                notifId: data.notifId,
-                appName: data.appName,
-                summary: data.summary,
-                body: data.body,
-                image: data.image,
-                urgency: data.urgency,
-                actions: data.actions,
-                timeout: data.urgency === 2 ? 10000 : 5000
-            });
-        }
-    }
 
     function dismissNotification(id) {
         root.notificationHistory = root.notificationHistory.filter(
@@ -1808,6 +1780,11 @@ Item {
 
     function toggleNotificationDnd() {
         root.setNotificationDnd(!root.notificationDnd);
+    }
+
+    function syncNotificationDnd() {
+        notifDndReader.running = false;
+        notifDndReader.running = true;
     }
 
     function setNotificationDnd(on) {
@@ -1839,9 +1816,18 @@ Item {
     property bool notificationSilencing: notificationDnd
 
     function invokeNotificationAction(identifier) {
-        // Walk tracked notifications to find and invoke the action.
-        // This is a no-op placeholder; actual invocation happens via the
-        // NotificationServer's tracked list if needed.
+        for (var i = 0; i < root.notificationHistory.length; i++) {
+            const record = root.notificationHistory[i];
+            if (record._notification && record._notification.actions) {
+                const actions = record._notification.actions;
+                for (var j = 0; j < actions.length; j++) {
+                    if (actions[j].identifier === identifier) {
+                        actions[j].invoke();
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     // ---------- Voxtype indicator ----------
@@ -2755,7 +2741,7 @@ Item {
         function open(): void  { root.openNotificationCenter(); }
         function close(): void { root.notificationCenterVisible = false; }
         function clear(): void { root.clearAllNotifications(); }
-        function dnd(): void   { root.toggleNotificationDnd(); }
+        function dnd(): void   { root.syncNotificationDnd(); }
     }
 
     // ---------- MPRIS (now playing) ----------

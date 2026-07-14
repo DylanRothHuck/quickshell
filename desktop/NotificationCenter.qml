@@ -27,13 +27,15 @@ CardWindow {
         spacing: 8
         QuickButton {
             root: ncPopup.root
-            label: root.notificationDnd ? "DND ON" : "DND OFF"
+            glyph: root.notificationDnd ? "󰂛" : "󰂚"
             selected: root.notificationDnd
+            padH: 10
             onClicked: root.toggleNotificationDnd()
         }
         QuickButton {
             root: ncPopup.root
-            label: "CLEAR"
+            glyph: "󰩬"
+            padH: 10
             onClicked: root.clearAllNotifications()
         }
     }
@@ -185,12 +187,19 @@ CardWindow {
                     }
                 }
 
-                // Click to dismiss individual notification
+                // Left-click invokes first action; right-click dismisses
                 MouseArea {
                     anchors.fill: parent
-                    acceptedButtons: Qt.RightButton
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.dismissNotification(modelData.notifId)
+                    onClicked: function(mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            root.dismissNotification(modelData.notifId);
+                        } else if (modelData.actions && modelData.actions.length > 0) {
+                            root.invokeNotificationAction(modelData.actions[0].identifier);
+                            root.dismissNotification(modelData.notifId);
+                        }
+                    }
                 }
             }
         }
@@ -209,6 +218,6 @@ CardWindow {
     }
 
     footer: root.notificationHistory.length > 0
-            ? "RIGHT-CLICK DISMISS  \u00b7  ESC CLOSE"
+            ? "LEFT-CLICK ACTION  \u00b7  RIGHT-CLICK DISMISS  \u00b7  ESC CLOSE"
             : ""
 }

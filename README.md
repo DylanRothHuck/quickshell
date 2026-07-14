@@ -33,7 +33,7 @@ This fork from ([bjarneo/quickshell](https://github.com/bjarneo/quickshell)) add
 | [`desktop/`](./desktop) | Top bar plus omni-menu command palette in a single Quickshell process. Kanagawa Dragon layout on the live omarchy palette, kanji workspace markers (10 slots, only highlight workspaces with windows), click-through popups for calendar (with caldir event dots) / screenshots / display / weather / aether blueprints / audio (multi-port device picker with auto-repair) / Tailscale (self IP as peer row), and a fused command palette over installed apps and the omarchy-menu (synonyms — "wallpaper" finds Background, "reboot" finds Restart). |
 | [`song-drop/`](./song-drop) | MPRIS notifier. Drops a liquid blob from the bar on track change, morphs into a song-title pill, holds, then retreats. |
 | [`song-slide/`](./song-slide) | MPRIS notifier, snappier sibling of song-drop. Slides a sharp-cornered card in from the right with title, artist, an accent stripe, and a flush bottom-edge progress bar. Cross-fades content on rapid track changes instead of restarting the slide. |
-| [`theme-wash/`](./theme-wash) | Theme-swap flourish. On `omarchy theme set <name>`, washes the new accent across the bar from an alternating corner like ink spilling in water, with the old accent pulsing out from the centre and the new theme's name popping briefly mid-wash. |
+| [`theme-wash/`](./theme-wash) | Theme-swap flourish. Hooked into `omarchy theme set <name>` (no manual launch or persistent daemon). Washes the new accent across the bar from an alternating corner like ink spilling in water, with the old accent pulsing out from the centre — accent is persisted to `~/.cache/omarchy/theme-wash.state` so the correct old→new colour transition survives across restarts. The process quits after the ~2 s animation. |
 | [`music-wallpaper/`](./music-wallpaper) | Music-reactive wallpaper. Reads `cliamp visstream` NDJSON, paints a soft radial pulse with mids halo, bass-transient ripples, and a low-opacity EQ across the bottom. Tints to the omarchy accent. |
 | [`clipboard-ripple/`](./clipboard-ripple) | Clipboard tactile feedback. `wl-paste --watch` blooms a soft accent-tinted halo outward from the cursor while a brighter inner core pulses twice. Click-through overlay. |
 | [`battery-drip/`](./battery-drip) | Rare, high-information battery feedback. Crossings of 20% / 10% drip a teardrop down the right edge of the bar; transition to Full (or plug-in already near full) fills a battery outline with a rising sinusoidal wave. Click-through overlay. |
@@ -66,8 +66,8 @@ qs -n -d -c song-drop
 # launch the song-slide overlay (snappier sibling, anchored right)
 qs -n -d -c song-slide
 
-# launch the theme-wash flourish
-qs -n -d -c theme-wash
+# theme-wash auto-triggers via hook (no manual launch needed)
+#   ~/.config/omarchy/hooks/theme-set.d/55-theme-wash
 
 # launch the music-reactive wallpaper (requires cliamp)
 qs -n -d -c music-wallpaper

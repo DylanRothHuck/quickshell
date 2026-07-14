@@ -19,7 +19,7 @@ Rectangle {
     property var actions: []
     property real timeout: 5000
 
-    signal dismissed()
+    signal dismissed(var toast)
     signal actionClicked(string identifier)
 
     width: 360
@@ -69,15 +69,18 @@ Rectangle {
     Timer {
         id: exitTimer
         interval: 120
-        onTriggered: popup.dismissed()
+        onTriggered: popup.dismissed(popup)
     }
 
-    // Click anywhere to dismiss
+    // Click anywhere to invoke first action (if any) then dismiss
     MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         onClicked: {
             dismissTimer.stop();
+            if (popup.actions.length > 0) {
+                popup.actionClicked(popup.actions[0].identifier);
+            }
             popup.exit();
         }
     }

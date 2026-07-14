@@ -52,6 +52,14 @@ ShellRoot {
         if (want.foreground) root.ink   = want.foreground;
     }
 
+    // paletteFile is reloaded explicitly from onThemeNameLoaded so we
+    // always parse exactly once per swap, in a known order.
+    FileView {
+        id: paletteFile
+        path: root.colorsPath
+        onLoaded: root.parseColors(paletteFile.text())
+    }
+
     function onThemeNameLoaded(name) {
         const trimmed = (name || "").trim();
         if (root.lastTheme === "") {
@@ -67,17 +75,9 @@ ShellRoot {
         }
     }
 
-    // theme.name is the sole trigger. paletteFile is reloaded explicitly from
-    // onThemeNameLoaded so we always parse exactly once per swap, in a known
-    // order: theme name detected → palette refreshed → prevAccent captured →
-    // animation restarted. Letting paletteFile watch on its own would race
-    // with this and cause a double-parse on every swap.
-    FileView {
-        id: paletteFile
-        path: root.colorsPath
-        onLoaded: root.parseColors(paletteFile.text())
-    }
-
+    // Watches theme.name for changes and auto-triggers the animation.
+    // prevAccent is captured just before paletteFile.reload() so the
+    // ghost pulse shows the OLD colour while the ink flood shows the NEW.
     FileView {
         id: themeMarker
         path: root.themeNamePath
@@ -86,15 +86,22 @@ ShellRoot {
         onLoaded: root.onThemeNameLoaded(themeMarker.text())
     }
 
-    // Manual trigger for testing or shell-side hooks:
-    //   qs -p ~/.config/quickshell/theme-wash/shell.qml ipc call wash run
+    // IPC trigger: qs -c theme-wash ipc call wash run "Old Theme Name"
+    // The hook passes the previous theme name so the daemon can animate
+    // even on first run (when lastTheme is empty).
     IpcHandler {
         target: "wash"
-        function run(): void {
-            root.prevAccent = root.accent;
-            root.washCount += 1;
+        function run(themeName: string): void {
+            const oldName = (themeName || "").trim();
+            if (oldName) root.lastTheme = oldName;
             paletteFile.reload();
-            washAnim.restart();
+            const newName = (themeMarker.text() || "").trim();
+            if (newName && newName !== root.lastTheme) {
+                root.prevAccent = root.accent;
+                root.lastTheme = newName;
+                root.washCount += 1;
+                washAnim.restart();
+            }
         }
     }
 
@@ -342,7 +349,7 @@ ShellRoot {
                     }
 
                     SequentialAnimation {
-                        PauseAnimation { duration: 1180 }
+                        PauseAnimation { duration: 600 }
                         ParallelAnimation {
                             NumberAnimation {
                                 target: stage; property: "ringR"
