@@ -536,6 +536,41 @@ Item {
             root.run(c + "Headphone 87 unmute && " + c + "Speaker 0 mute && " + c + "'Bass Speaker' off");
         }
     }
+    function _getDefaultSinkEntry() {
+        return root.audioSinks.find(s => s.isDefault) || root.audioSinks[0] || null;
+    }
+    function resetAudio() {
+        const entry = root._getDefaultSinkEntry();
+        if (!entry) return;
+        const card = entry.alsaCard;
+        if (!card) return;
+        const port = entry.portName || "analog-output-speaker";
+        root._setAlsaMixer(card, port);
+        root.run("pamixer --allow-boost --set-volume 100");
+        root.audioVol = 100;
+        root.audioMuted = false;
+    }
+    function setAudioProfile(profile) {
+        const entry = root._getDefaultSinkEntry();
+        if (!entry) return;
+        const card = entry.alsaCard;
+        if (!card) return;
+        const c = "amixer -c " + card + " sset ";
+        switch (profile) {
+        case "speakers":
+            root._setAlsaMixer(card, "analog-output-speaker");
+            break;
+        case "headphones":
+            root._setAlsaMixer(card, "analog-output-headphones");
+            break;
+        case "bass-boost":
+            root.run(c + "Speaker 87 unmute && " + c + "'Bass Speaker' on && " + c + "Headphone 0 mute");
+            break;
+        case "flat":
+            root.run(c + "Speaker 87 unmute && " + c + "'Bass Speaker' on && " + c + "Headphone 0 mute && " + c + "PCM 255");
+            break;
+        }
+    }
     function refreshAudioSinks() {
         audioSinksProbe.running = false;
         audioSinksProbe.running = true;
