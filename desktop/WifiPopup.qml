@@ -81,7 +81,7 @@ CardWindow {
     readonly property var _visibleNets: root.wifiRadioOn
                                         ? root.wifiNetworks.slice(0, 8)
                                         : []
-    readonly property int _kbdMax: _headerCount + _visibleNets.length + 1
+    readonly property int _kbdMax: _headerCount + _visibleNets.length
 
     function _activateAt(i) {
         wifiPopup.kbdIndex = i;
@@ -96,7 +96,6 @@ CardWindow {
             else root.connectWifi(net.ssid);
             return;
         }
-        root.toggleHotspot();
     }
 
     footer: root.wifiRadioOn && root.wifiNetworks.length > 0
@@ -222,77 +221,78 @@ CardWindow {
             color: root.sep
         }
 
-        Rectangle {
-            readonly property int localIndex: wifiPopup._headerCount + wifiPopup._visibleNets.length
-            readonly property bool isHotspotFocused: wifiPopup.kbdIndex === localIndex
-
-            width: parent.width
-            height: 38
-            radius: root.cornerRadius
-            color: isHotspotFocused
-                   ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20)
-                   : hotspotMouse.containsMouse
-                     ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
-                     : "transparent"
-            border.color: isHotspotFocused ? root.seal : "transparent"
-            border.width: isHotspotFocused ? 1.5 : 0
-            Behavior on color { ColorAnimation { duration: 120 } }
-            Behavior on border.color { ColorAnimation { duration: 120 } }
-
-            Text {
-                id: hotspotIcon
-                anchors.left: parent.left
-                anchors.leftMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.icoHotspot
-                color: root.hotspotActive ? root.seal : root.inkDeep
-                font.family: root.mono
-                font.pixelSize: 16
-            }
-            Text {
-                anchors.left: hotspotIcon.right
-                anchors.leftMargin: 10
-                anchors.verticalCenter: parent.verticalCenter
-                text: "HOTSPOT"
-                color: root.ink
-                font.family: root.mono
-                font.pixelSize: 11
-            }
-
-            Text {
-                anchors.right: hotspotBtn.left
-                anchors.rightMargin: 10
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.hotspotActive
-                      ? (root.hotspotClients > 0
-                         ? "ACTIVE \u00b7 " + root.hotspotClients + " CLIENT(S)"
-                         : "ACTIVE")
-                      : ""
-                color: root.seal
-                font.family: root.mono
-                font.pixelSize: 9
-                font.letterSpacing: 1
-                visible: text.length > 0
-            }
-
-            QuickButton {
-                id: hotspotBtn
-                root: wifiPopup.root
-                anchors.right: parent.right
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                label: root.hotspotActive ? "STOP" : "START"
-                selected: root.hotspotActive
-                onClicked: root.toggleHotspot()
-            }
-
-            MouseArea {
-                id: hotspotMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: wifiPopup._activateAt(localIndex)
-            }
-        }
+        // Hotspot — disabled, feature not finished
+        // Rectangle {
+        //     readonly property int localIndex: wifiPopup._headerCount + wifiPopup._visibleNets.length
+        //     readonly property bool isHotspotFocused: wifiPopup.kbdIndex === localIndex
+        //
+        //     width: parent.width
+        //     height: 38
+        //     radius: root.cornerRadius
+        //     color: isHotspotFocused
+        //            ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20)
+        //            : hotspotMouse.containsMouse
+        //              ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+        //              : "transparent"
+        //     border.color: isHotspotFocused ? root.seal : "transparent"
+        //     border.width: isHotspotFocused ? 1.5 : 0
+        //     Behavior on color { ColorAnimation { duration: 120 } }
+        //     Behavior on border.color { ColorAnimation { duration: 120 } }
+        //
+        //     Text {
+        //         id: hotspotIcon
+        //         anchors.left: parent.left
+        //         anchors.leftMargin: 12
+        //         anchors.verticalCenter: parent.verticalCenter
+        //         text: root.icoHotspot
+        //         color: root.hotspotActive ? root.seal : root.inkDeep
+        //         font.family: root.mono
+        //         font.pixelSize: 16
+        //     }
+        //     Text {
+        //         anchors.left: hotspotIcon.right
+        //         anchors.leftMargin: 10
+        //         anchors.verticalCenter: parent.verticalCenter
+        //         text: "HOTSPOT"
+        //         color: root.ink
+        //         font.family: root.mono
+        //         font.pixelSize: 11
+        //     }
+        //
+        //     Text {
+        //         anchors.right: hotspotBtn.left
+        //         anchors.rightMargin: 10
+        //         anchors.verticalCenter: parent.verticalCenter
+        //         text: root.hotspotActive
+        //               ? (root.hotspotClients > 0
+        //                  ? "ACTIVE \u00b7 " + root.hotspotClients + " CLIENT(S)"
+        //                  : "ACTIVE")
+        //               : ""
+        //         color: root.seal
+        //         font.family: root.mono
+        //         font.pixelSize: 9
+        //         font.letterSpacing: 1
+        //         visible: text.length > 0
+        //     }
+        //
+        //     QuickButton {
+        //         id: hotspotBtn
+        //         root: wifiPopup.root
+        //         anchors.right: parent.right
+        //         anchors.rightMargin: 8
+        //         anchors.verticalCenter: parent.verticalCenter
+        //         label: root.hotspotActive ? "STOP" : "START"
+        //         selected: root.hotspotActive
+        //         onClicked: root.toggleHotspot()
+        //     }
+        //
+        //     MouseArea {
+        //         id: hotspotMouse
+        //         anchors.fill: parent
+        //         hoverEnabled: true
+        //         cursorShape: Qt.PointingHandCursor
+        //         onClicked: wifiPopup._activateAt(localIndex)
+        //     }
+        // }
     }
 }
