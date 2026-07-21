@@ -91,12 +91,6 @@ CardWindow {
         width: parent.width
         spacing: 10
 
-        Rectangle {
-            width: parent.width
-            height: 1
-            color: root.sep
-        }
-
         Repeater {
             model: btPopup._visibleDevs
 
