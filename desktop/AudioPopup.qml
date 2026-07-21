@@ -23,7 +23,7 @@ CardWindow {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: root.audioMuted
-                  ? "\uF0EE" + "  " + root.audioVol + "%"
+                  ? root.icoMute + "  " + root.audioVol + "%"
                   : root.audioVol + "%"
             color: root.audioVol >= 100 ? root.accent : root.ink
             font.family: root.mono
