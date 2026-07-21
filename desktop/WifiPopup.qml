@@ -11,7 +11,7 @@ CardWindow {
     title: "WI-FI"
 
     subtitle: {
-        if (!root.wifiRadioOn) return "RADIO OFF";
+        if (!root.wifiRadioOn) return "OFF";
         if (root.wifiScanning) return "SCANNING\u2026";
         if (root.netKind === "wifi" && root.wifiSsid)
             return root.wifiSsid + "  \u00b7  " + root.wifiSignal + "%";
@@ -28,7 +28,7 @@ CardWindow {
         spacing: 8
         QuickButton {
             root: wifiPopup.root
-            label: root.wifiRadioOn ? "RADIO OFF" : "RADIO ON"
+            label: root.wifiRadioOn ? "OFF" : "ON"
             selected: wifiPopup.kbdIndex === 0
             onClicked: root.toggleWifiRadio()
         }
