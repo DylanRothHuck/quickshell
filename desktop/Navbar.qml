@@ -540,14 +540,14 @@ Item {
         return root.audioSinks.find(s => s.isDefault) || root.audioSinks[0] || null;
     }
     function resetAudio() {
-        const entry = root._getDefaultSinkEntry();
+        const entry = root.audioSinks.find(s => s.alsaCard) || root._getDefaultSinkEntry();
         if (!entry) return;
         const card = entry.alsaCard;
         if (!card) return;
         const port = entry.portName || "analog-output-speaker";
         root._setAlsaMixer(card, port);
-        root.run("pamixer --allow-boost --set-volume 100");
-        root.audioVol = 100;
+        root.run("pamixer --allow-boost --set-volume 50 -u");
+        root.audioVol = 50;
         root.audioMuted = false;
     }
     function refreshAudioSinks() {
