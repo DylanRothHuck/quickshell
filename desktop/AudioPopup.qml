@@ -107,12 +107,6 @@ CardWindow {
         spacing: 10
 
         // Tab bar
-        Rectangle {
-            width: parent.width
-            height: 1
-            color: root.sep
-        }
-
         Row {
             width: parent.width
             spacing: 0
