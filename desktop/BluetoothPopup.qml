@@ -10,7 +10,7 @@ CardWindow {
     layerNamespace: "omarchy-bluetooth"
     title: "BLUETOOTH"
     subtitle: {
-        if (!root.btPowered) return "POWER OFF";
+        if (!root.btPowered) return "OFF";
         let s = root.btDevices.length + " DEVICES";
         if (root.btCount > 0) s += "  \u00b7  " + root.btCount + " CONN";
         if (root.btScanning) s += "  \u00b7  SCANNING";
@@ -25,13 +25,13 @@ CardWindow {
         spacing: 8
         QuickButton {
             root: btPopup.root
-            label: root.btPowered ? "POWER OFF" : "POWER ON"
+            glyph: root.icoPower
             selected: btPopup.kbdIndex === 0
             onClicked: root.btTogglePower()
         }
         QuickButton {
             root: btPopup.root
-            label: root.btScanning ? "SCANNING" : "SCAN"
+            glyph: root.icoRefresh
             selected: btPopup.kbdIndex === 1 || root.btScanning
             onClicked: root.btToggleScan()
         }
