@@ -209,63 +209,6 @@ CardWindow {
                 }
 
                 Text {
-                    text: "PROFILES"
-                    color: root.inkDeep
-                    font.family: root.mono
-                    font.pixelSize: 10
-                    font.letterSpacing: 2
-                }
-
-                Row {
-                    width: parent.width
-                    spacing: 6
-
-                    Repeater {
-                        model: [
-                            { key: "speakers",   label: "SPEAKERS" },
-                            { key: "headphones",  label: "HEADPHONES" },
-                            { key: "bass-boost",  label: "BASS BOOST" },
-                            { key: "flat",        label: "FLAT" }
-                        ]
-                        delegate: Rectangle {
-                            required property var modelData
-                            width: (parent.width - 18) / 4
-                            height: 28
-                            radius: root.cornerRadius
-                            color: profileMouse.containsMouse
-                                   ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20)
-                                   : "transparent"
-                            border.color: profileMouse.containsMouse ? root.seal : "transparent"
-                            border.width: profileMouse.containsMouse ? 1.5 : 0
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                color: profileMouse.containsMouse ? root.seal : root.ink
-                                font.family: root.mono
-                                font.pixelSize: 9
-                                font.letterSpacing: 1
-                            }
-                            MouseArea {
-                                id: profileMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.setAudioProfile(modelData.key)
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    width: parent.width
-                    height: 1
-                    color: root.sep
-                }
-
-                Text {
                     text: "ACTIVE STREAMS"
                     color: root.inkDeep
                     font.family: root.mono
